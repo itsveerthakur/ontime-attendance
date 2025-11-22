@@ -19,9 +19,42 @@ const WorkPremises: React.FC<WorkPremisesProps> = ({ setActivePage }) => {
 
     const fetchPremises = async () => {
         setIsLoading(true);
-        const { data, error } = await supabase.from('work_premises').select('*');
-        if (error) console.error("Error fetching work premises:", error.message);
-        else setPremises(data || []);
+        
+        // Fetch work premises
+        const { data: premisesData, error: premisesError } = await supabase.from('work_premises').select('*');
+        if (premisesError) {
+            console.error("Error fetching work premises:", premisesError.message);
+            setIsLoading(false);
+            return;
+        }
+        
+        // Fetch employee counts for each work premise
+        const { data: employeesData, error: employeesError } = await supabase
+            .from('employees')
+            .select('workPremises')
+            .eq('status', 'Active');
+            
+        if (employeesError) {
+            console.error("Error fetching employees:", employeesError.message);
+        }
+        
+        // Count employees per work premise
+        const employeeCounts: Record<string, number> = {};
+        if (employeesData) {
+            employeesData.forEach(emp => {
+                if (emp.workPremises) {
+                    employeeCounts[emp.workPremises] = (employeeCounts[emp.workPremises] || 0) + 1;
+                }
+            });
+        }
+        
+        // Update premises with employee counts
+        const updatedPremises = (premisesData || []).map(premise => ({
+            ...premise,
+            employeeCount: employeeCounts[premise.name] || 0
+        }));
+        
+        setPremises(updatedPremises);
         setIsLoading(false);
     };
 

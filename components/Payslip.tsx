@@ -11,6 +11,37 @@ interface PayslipProps {
 
 const Payslip: React.FC<PayslipProps> = ({ data, companyName, logoUrl, companyDetails }) => {
   
+  const openPrintWindow = () => {
+    const payslipContent = document.querySelector('.payslip-container')?.outerHTML;
+    const newWindow = window.open('', '_blank');
+    if (newWindow && payslipContent) {
+      newWindow.document.write(`
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <title>Payslip - ${data.employeeName}</title>
+          <script src="https://cdn.tailwindcss.com"></script>
+          <style>
+            @media print {
+              @page { size: A4; margin: 15mm 10mm; }
+              body { margin: 0; padding: 0; }
+              .no-print { display: none !important; }
+            }
+          </style>
+        </head>
+        <body class="bg-white p-4">
+          ${payslipContent}
+          <div class="mt-6 text-center no-print">
+            <button onclick="window.print()" class="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 mr-4">Print</button>
+            <button onclick="window.close()" class="bg-gray-600 text-white px-6 py-2 rounded-lg hover:bg-gray-700">Close</button>
+          </div>
+        </body>
+        </html>
+      `);
+      newWindow.document.close();
+    }
+  };
+  
   const formatDate = (dateString: string) => {
     if (!dateString) return '';
     if (typeof dateString === 'number') {
@@ -50,7 +81,18 @@ const Payslip: React.FC<PayslipProps> = ({ data, companyName, logoUrl, companyDe
   ].filter(Boolean).join(', ');
 
   return (
-    <div className="payslip-container bg-white p-8 max-w-[210mm] mx-auto border border-gray-300 shadow-sm print:shadow-none print:border-none print:p-0 print:m-0 text-slate-800 text-sm font-sans leading-normal">
+    <div>
+      {/* Print Button */}
+      <div className="flex justify-end mb-4 no-print">
+        <button 
+          onClick={openPrintWindow}
+          className="flex items-center space-x-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors shadow-sm"
+        >
+          <span>Print/Download</span>
+        </button>
+      </div>
+      
+      <div className="payslip-container bg-white p-8 max-w-[210mm] mx-auto border border-gray-300 shadow-sm text-slate-800 text-sm font-sans leading-normal">
       
       {/* Header */}
       <div className="flex justify-between items-center border-b-2 border-slate-800 pb-4 mb-4">
@@ -116,7 +158,7 @@ const Payslip: React.FC<PayslipProps> = ({ data, companyName, logoUrl, companyDe
             <span className="text-slate-900">{data.paidDays} / {data.workingDays}</span>
         </div>
         <div className="grid grid-cols-[120px_1fr]">
-            <span className="font-semibold text-slate-600">LOP Days:</span>
+            <span className="font-semibold text-slate-600">LWP Days:</span>
             <span className="text-slate-900">{data.lopDays}</span>
         </div>
       </div>
@@ -182,7 +224,7 @@ const Payslip: React.FC<PayslipProps> = ({ data, companyName, logoUrl, companyDe
         </div>
         <div className="text-right">
             <p className="text-sm font-bold text-slate-600 uppercase mb-1">Net Payable</p>
-            <p className="text-3xl font-bold text-slate-900">{formatCurrency(data.netPay)}</p>
+            <p className="text-2xl font-bold text-slate-900">{formatCurrency(data.netPay)}</p>
         </div>
       </div>
 
@@ -191,6 +233,7 @@ const Payslip: React.FC<PayslipProps> = ({ data, companyName, logoUrl, companyDe
         <p>This is a computer-generated document and does not require a signature.</p>
         <p>&copy; {new Date().getFullYear()} {companyName}. All Rights Reserved.</p>
       </div>
+    </div>
     </div>
   );
 };

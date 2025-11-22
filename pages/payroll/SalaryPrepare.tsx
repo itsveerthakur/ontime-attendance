@@ -558,51 +558,68 @@ const SalaryPrepare: React.FC<SalaryPrepareProps> = ({ onBack }) => {
 
             if (!salary) return null;
             
-            const row: any = {
-                'Employee Code': emp.employeeCode,
-                'Name': `${emp.firstName} ${emp.lastName}`,
-                'Department': emp.department,
-                'Designation': emp.designation,
-                'Bank Name': emp.bankName,
-                'Account No': emp.accountNo,
-                'IFSC Code': emp.ifscCode,
-                'Days In Month': salary.daysInMonth,
-                'Paid Days': salary.paidDays,
-                'Arrear Days': salary.arrearDays,
-            };
-
+            // Create ordered row object according to specified column order
+            const row: any = {};
+            
+            // Basic Info
+            row['Employee Code'] = emp.employeeCode;
+            row['Name'] = `${emp.firstName} ${emp.lastName}`;
+            row['Department'] = emp.department;
+            row['Designation'] = emp.designation;
+            row['Bank Name'] = emp.bankName;
+            row['Account No'] = emp.accountNo;
+            row['IFSC Code'] = emp.ifscCode;
+            
+            // Attendance
+            row['Days In Month'] = salary.daysInMonth;
+            row['Paid Days'] = salary.paidDays;
+            row['Arrear Days'] = salary.arrearDays;
+            
+            // Structure
             row['Monthly Structure Gross'] = structure ? structure.monthly_gross : 0;
             
+            // Earnings breakdown
+            row['Basic'] = salary.basic;
+            row['HRA'] = salary.hra;
+            
+            // Add other earnings components dynamically
             salary.earningsBreakdown.forEach((e: any) => {
-                row[e.name] = e.earned;
+                if (!['Basic', 'HRA'].some(name => e.name.toLowerCase().includes(name.toLowerCase()))) {
+                    row[e.name] = e.earned;
+                }
             });
             
+            // Arrears
             row['Arrears (Calc)'] = salary.calculatedArrears;
             row['Arrears (Manual)'] = salary.manualArrears;
             row['Total Arrears'] = salary.arrearAmount;
             
+            // Totals
             row['Gross Earned'] = salary.grossEarned;
             row['Gross With Arrears'] = salary.grossWithArrears;
-            
-            salary.deductionsBreakdown.forEach((d: any) => {
-                row[d.name] = d.earned;
-            });
-            
+
+            // Statutory deductions
+            row['EPF'] = salary.epf;
+            row['ESIC'] = salary.esic;
+                        
+            // Adjustments
             row['Other Deduction'] = salary.otherDeduction;
             row['TDS'] = salary.tds;
             row['Advance'] = salary.advance;
             
+            // Final calculations
             row['Total Deductions'] = salary.totalDeduction;
             row['Net Pay'] = salary.netInHand;
 
-             if (salary.employerAdditionalBreakdown) {
-                salary.employerAdditionalBreakdown.forEach((ea: any) => {
-                    row[`Employer ${ea.name}`] = ea.earned;
-                });
-            }
-            
+            // Employer contributions
+            row['Employer EPF'] = salary.epf; // Employer EPF = Employee EPF
+            row['Employer ESIC'] = salary.esic > 0 ? Math.round(salary.esic * 3.75 / 0.75) : 0; // Employer ESIC calculation
+
+            // Final CTC
             row['CTC'] = salary.earnedCTC;
             row['Status'] = lockedStatusMap[emp.employeeCode] || 'Open';
+            
+            
             
             return row;
         }).filter(Boolean);

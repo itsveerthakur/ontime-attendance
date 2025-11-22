@@ -30,7 +30,6 @@ const MasterManagement: React.FC<MasterManagementProps> = ({ setActivePage }) =>
       <h1 className="text-3xl font-bold text-slate-800">Master Management</h1>
       <p className="text-slate-600 mt-2">Central hub for managing all core HR data. Click a category to begin.</p>
       <div className="mt-8 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
-        <InfoCard title="Role Management" onClick={() => setActivePage('Role Management')} />
         <InfoCard title="On-Roll Employees" onClick={() => setActivePage('On-Roll Employees')} />
         <InfoCard title="Contractual Employees" onClick={() => setActivePage('Contractual Employees')} />
         <InfoCard title="Department" onClick={() => setActivePage('Department')} />
@@ -39,6 +38,7 @@ const MasterManagement: React.FC<MasterManagementProps> = ({ setActivePage }) =>
         <InfoCard title="Work Premises" onClick={() => setActivePage('Work Premises')} />
         <InfoCard title="Location" onClick={() => setActivePage('Location')} />
         <InfoCard title="Sub Location" onClick={() => setActivePage('Sub Location')} />
+        <InfoCard title="Role Management" onClick={() => setActivePage('Role Management')} />
       </div>
     </div>
   );

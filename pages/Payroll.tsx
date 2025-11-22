@@ -16,12 +16,10 @@ interface PayrollProps {
 }
 
 const Payroll: React.FC<PayrollProps> = ({ initialView }) => {
-  const [activeView, setActiveView] = useState<string>('Dashboard');
+  const [activeView, setActiveView] = useState<string>(initialView || 'Dashboard');
 
   useEffect(() => {
-      if (initialView) {
-          setActiveView(initialView);
-      }
+      setActiveView(initialView || 'Dashboard');
   }, [initialView]);
 
   const renderView = () => {

@@ -32,7 +32,150 @@ const ViewEmployeeModal: React.FC<ViewEmployeeModalProps> = ({ isOpen, onClose, 
     if (!isOpen || !employee) return null;
 
     const handlePrint = () => {
-        window.print();
+        const printWindow = window.open('', '_blank');
+        if (!printWindow) return;
+
+        const printContent = `
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <title>Employee Details - ${employee.firstName} ${employee.lastName}</title>
+                <style>
+                    * { margin: 0; padding: 0; box-sizing: border-box; }
+                    body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; line-height: 1.4; color: #1e293b; background: white; }
+                    .container { max-width: 1200px; margin: 0 auto; padding: 20px; }
+                    .header { background: #1e293b; color: white; padding: 30px; border-radius: 8px; margin-bottom: 30px; }
+                    .profile-section { display: flex; align-items: center; gap: 20px; margin-bottom: 20px; }
+                    .profile-img { width: 80px; height: 80px; border-radius: 50%; border: 3px solid rgba(255,255,255,0.2); object-fit: cover; }
+                    .profile-placeholder { width: 80px; height: 80px; border-radius: 50%; border: 3px solid rgba(255,255,255,0.2); background: #475569; display: flex; align-items: center; justify-content: center; color: #cbd5e1; }
+                    .employee-name { font-size: 28px; font-weight: bold; margin-bottom: 8px; }
+                    .employee-details { font-size: 14px; opacity: 0.9; }
+                    .employee-badges { display: flex; gap: 10px; margin-top: 15px; }
+                    .badge { padding: 6px 12px; background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.1); border-radius: 4px; font-size: 12px; }
+                    .sections { display: grid; grid-template-columns: repeat(auto-fit, minmax(400px, 1fr)); gap: 20px; }
+                    .section { background: white; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden; }
+                    .section-header { background: #f8fafc; padding: 15px; border-bottom: 1px solid #e2e8f0; font-weight: bold; color: #475569; font-size: 14px; text-transform: uppercase; }
+                    .section-content { padding: 20px; }
+                    .detail-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; }
+                    .detail-item { padding-bottom: 12px; border-bottom: 1px solid #f1f5f9; }
+                    .detail-item:last-child { border-bottom: none; }
+                    .detail-label { font-size: 11px; color: #64748b; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px; }
+                    .detail-value { font-size: 14px; color: #1e293b; font-weight: 600; word-break: break-word; }
+                    .full-width { grid-column: 1 / -1; }
+                    @media print {
+                        body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+                        .container { padding: 10px; }
+                        .sections { grid-template-columns: repeat(2, 1fr); }
+                    }
+                </style>
+            </head>
+            <body>
+                <div class="container">
+                    <div class="header">
+                        <div class="profile-section">
+                            ${employee.photoUrl && !employee.photoUrl.includes('ui-avatars.com') ? 
+                                `<img src="${employee.photoUrl}" alt="Profile" class="profile-img" />` : 
+                                `<div class="profile-placeholder">👤</div>`
+                            }
+                            <div>
+                                <div class="employee-name">${employee.firstName} ${employee.lastName}</div>
+                                <div class="employee-details">
+                                    <strong>Code:</strong> ${employee.employeeCode} • 
+                                    <strong>Designation:</strong> ${employee.designation} • 
+                                    <strong>Department:</strong> ${employee.department}
+                                </div>
+                                <div class="employee-badges">
+                                    <span class="badge">${employee.userType}</span>
+                                    <span class="badge">${employee.gender}</span>
+                                    <span class="badge">${employee.status}</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="sections">
+                        <div class="section">
+                            <div class="section-header">Personal Information</div>
+                            <div class="section-content">
+                                <div class="detail-grid">
+                                    <div class="detail-item"><div class="detail-label">First Name</div><div class="detail-value">${employee.firstName || '-'}</div></div>
+                                    <div class="detail-item"><div class="detail-label">Middle Name</div><div class="detail-value">${employee.middleName || '-'}</div></div>
+                                    <div class="detail-item"><div class="detail-label">Last Name</div><div class="detail-value">${employee.lastName || '-'}</div></div>
+                                    <div class="detail-item"><div class="detail-label">Date of Birth</div><div class="detail-value">${employee.dateOfBirth || '-'}</div></div>
+                                    <div class="detail-item"><div class="detail-label">Father's Name</div><div class="detail-value">${employee.fatherName || '-'}</div></div>
+                                    <div class="detail-item"><div class="detail-label">Mother's Name</div><div class="detail-value">${employee.motherName || '-'}</div></div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="section">
+                            <div class="section-header">Contact Details</div>
+                            <div class="section-content">
+                                <div class="detail-grid">
+                                    <div class="detail-item"><div class="detail-label">Email Address</div><div class="detail-value">${employee.email || '-'}</div></div>
+                                    <div class="detail-item"><div class="detail-label">Phone Number</div><div class="detail-value">${employee.phone || '-'}</div></div>
+                                    <div class="detail-item full-width"><div class="detail-label">Current Address</div><div class="detail-value">${employee.presentAddress || '-'}</div></div>
+                                    <div class="detail-item full-width"><div class="detail-label">Permanent Address</div><div class="detail-value">${employee.permanentAddress || '-'}</div></div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="section">
+                            <div class="section-header">Employment Details</div>
+                            <div class="section-content">
+                                <div class="detail-grid">
+                                    <div class="detail-item"><div class="detail-label">Date of Joining</div><div class="detail-value">${employee.dateOfJoining || '-'}</div></div>
+                                    <div class="detail-item"><div class="detail-label">Date of Leaving</div><div class="detail-value">${employee.dateOfLeaving || '-'}</div></div>
+                                    <div class="detail-item"><div class="detail-label">Designation</div><div class="detail-value">${employee.designation || '-'}</div></div>
+                                    <div class="detail-item"><div class="detail-label">Department</div><div class="detail-value">${employee.department || '-'}</div></div>
+                                    <div class="detail-item"><div class="detail-label">Sub Department</div><div class="detail-value">${employee.subDepartment || '-'}</div></div>
+                                    <div class="detail-item"><div class="detail-label">Manager</div><div class="detail-value">${employee.managerName || '-'}</div></div>
+                                    <div class="detail-item"><div class="detail-label">Work Premises</div><div class="detail-value">${employee.workPremises || '-'}</div></div>
+                                    <div class="detail-item"><div class="detail-label">Role</div><div class="detail-value">${employee.userRole || '-'}</div></div>
+                                    ${employee.contractorName ? `<div class="detail-item"><div class="detail-label">Contractor</div><div class="detail-value">${employee.contractorName}</div></div>` : ''}
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="section">
+                            <div class="section-header">Location & Access</div>
+                            <div class="section-content">
+                                <div class="detail-grid">
+                                    <div class="detail-item"><div class="detail-label">Assigned Location</div><div class="detail-value">${employee.location || '-'}</div></div>
+                                    <div class="detail-item"><div class="detail-label">Sub Location</div><div class="detail-value">${employee.subLocation || '-'}</div></div>
+                                    <div class="detail-item"><div class="detail-label">Shift ID</div><div class="detail-value">${employee.shiftId || '-'}</div></div>
+                                    <div class="detail-item"><div class="detail-label">App Login Access</div><div class="detail-value">${employee.appLoginAccess ? 'Enabled' : 'Disabled'}</div></div>
+                                    <div class="detail-item"><div class="detail-label">Attendance View</div><div class="detail-value">${employee.attendanceViewAccess ? 'Enabled' : 'Disabled'}</div></div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="section">
+                            <div class="section-header">Bank & Statutory</div>
+                            <div class="section-content">
+                                <div class="detail-grid">
+                                    <div class="detail-item"><div class="detail-label">Bank Name</div><div class="detail-value">${employee.bankName || '-'}</div></div>
+                                    <div class="detail-item"><div class="detail-label">Account Number</div><div class="detail-value">${employee.accountNo || '-'}</div></div>
+                                    <div class="detail-item"><div class="detail-label">IFSC Code</div><div class="detail-value">${employee.ifscCode || '-'}</div></div>
+                                    <div class="detail-item"><div class="detail-label">Payment Mode</div><div class="detail-value">${employee.modeOfPayment || '-'}</div></div>
+                                    <div class="detail-item"><div class="detail-label">UAN Number</div><div class="detail-value">${employee.uanNo || '-'}</div></div>
+                                    <div class="detail-item"><div class="detail-label">ESIC Number</div><div class="detail-value">${employee.esicNo || '-'}</div></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </body>
+            </html>
+        `;
+
+        printWindow.document.write(printContent);
+        printWindow.document.close();
+        printWindow.focus();
+        
+        setTimeout(() => {
+            printWindow.print();
+        }, 250);
     };
 
     return (
@@ -151,7 +294,7 @@ const ViewEmployeeModal: React.FC<ViewEmployeeModalProps> = ({ isOpen, onClose, 
                         className="px-5 py-2 text-sm font-medium text-white bg-primary hover:bg-primary-dark border border-transparent rounded-lg transition-colors shadow-sm flex items-center gap-2"
                     >
                         <PrinterIcon className="w-4 h-4" />
-                        Print / Download
+                        Print
                     </button>
                     <button 
                         onClick={onClose}

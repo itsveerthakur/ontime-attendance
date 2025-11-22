@@ -31,8 +31,8 @@ const AddEditLocationView: React.FC<AddEditLocationViewProps> = ({ setActivePage
         status: 'active',
         parentLocation: '',
         radius: 65,
-        latitude: 28.573114,
-        longitude: 77.379298,
+        latitude: 0,
+        longitude: 0,
         address: ''
     });
     const [mapError, setMapError] = useState<string | null>(null);
@@ -73,13 +73,49 @@ const AddEditLocationView: React.FC<AddEditLocationViewProps> = ({ setActivePage
              return;
         }
 
-        const initialCenter = (formData.latitude && formData.longitude)
-            ? { lat: Number(formData.latitude), lng: Number(formData.longitude) }
-            : { lat: 28.573114, lng: 77.379298 }; // Default to a location in Noida
+        // Try to get user's current location, fallback to default
+        let initialCenter = { lat: 0, lng: 0 };
+        
+        if (formData.latitude && formData.longitude) {
+            initialCenter = { lat: Number(formData.latitude), lng: Number(formData.longitude) };
+        } else if (navigator.geolocation) {
+            navigator.geolocation.getCurrentPosition(
+                (position) => {
+                    const userLocation = {
+                        lat: position.coords.latitude,
+                        lng: position.coords.longitude
+                    };
+                    map.setCenter(userLocation);
+                    marker.setPosition(userLocation);
+                    circle.setCenter(userLocation);
+                    setFormData(prev => ({
+                        ...prev,
+                        latitude: userLocation.lat,
+                        longitude: userLocation.lng
+                    }));
+                    
+                    // Reverse geocode to get address
+                    geocoder.geocode({ location: userLocation }, (results: any, status: any) => {
+                        if (status === 'OK' && results[0]) {
+                            setFormData(prev => ({ ...prev, address: results[0].formatted_address }));
+                        }
+                    });
+                },
+                (error) => {
+                    console.warn('Geolocation failed:', error);
+                    // Use a default location (you can change this to your preferred default)
+                    initialCenter = { lat: 28.6139, lng: 77.2090 }; // New Delhi
+                    map.setCenter(initialCenter);
+                }
+            );
+        } else {
+            // Geolocation not supported, use default location
+            initialCenter = { lat: 28.6139, lng: 77.2090 }; // New Delhi
+        }
 
         const map = new window.google.maps.Map(mapRef.current, {
             center: initialCenter,
-            zoom: 15,
+            zoom: formData.latitude && formData.longitude ? 15 : 10,
             mapTypeControl: false,
         });
         mapInstance.current = map;
@@ -133,24 +169,54 @@ const AddEditLocationView: React.FC<AddEditLocationViewProps> = ({ setActivePage
             updateFormFromLatLng(pos);
         });
         
-        if (addressInputRef.current) {
-            const autocomplete = new window.google.maps.places.Autocomplete(addressInputRef.current);
-            autocomplete.bindTo('bounds', map);
-            autocomplete.addListener('place_changed', () => {
-                const place = autocomplete.getPlace();
-                if (place.geometry && place.geometry.location) {
-                    map.setCenter(place.geometry.location);
-                    map.setZoom(17);
-                    marker.setPosition(place.geometry.location);
-                    circle.setCenter(place.geometry.location);
-                    setFormData(prev => ({
-                        ...prev,
-                        address: place.formatted_address || '',
-                        latitude: place.geometry.location.lat(),
-                        longitude: place.geometry.location.lng(),
-                    }));
+        if (addressInputRef.current && window.google.maps.places.PlaceAutocompleteElement) {
+            try {
+                const autocompleteElement = new window.google.maps.places.PlaceAutocompleteElement();
+                autocompleteElement.id = 'place-autocomplete';
+                
+                // Replace the input with the new element
+                const container = addressInputRef.current.parentElement;
+                if (container) {
+                    container.appendChild(autocompleteElement);
+                    addressInputRef.current.style.display = 'none';
+                    
+                    autocompleteElement.addEventListener('gmp-placeselect', (event: any) => {
+                        const place = event.place;
+                        if (place.location) {
+                            map.setCenter(place.location);
+                            map.setZoom(17);
+                            marker.setPosition(place.location);
+                            circle.setCenter(place.location);
+                            setFormData(prev => ({
+                                ...prev,
+                                address: place.formattedAddress || '',
+                                latitude: place.location.lat(),
+                                longitude: place.location.lng(),
+                            }));
+                        }
+                    });
                 }
-            });
+            } catch (error) {
+                console.warn('PlaceAutocompleteElement not available, falling back to legacy Autocomplete');
+                // Fallback to legacy Autocomplete if new element is not available
+                const autocomplete = new window.google.maps.places.Autocomplete(addressInputRef.current);
+                autocomplete.bindTo('bounds', map);
+                autocomplete.addListener('place_changed', () => {
+                    const place = autocomplete.getPlace();
+                    if (place.geometry && place.geometry.location) {
+                        map.setCenter(place.geometry.location);
+                        map.setZoom(17);
+                        marker.setPosition(place.geometry.location);
+                        circle.setCenter(place.geometry.location);
+                        setFormData(prev => ({
+                            ...prev,
+                            address: place.formatted_address || '',
+                            latitude: place.geometry.location.lat(),
+                            longitude: place.geometry.location.lng(),
+                        }));
+                    }
+                });
+            }
         }
     };
     
@@ -251,6 +317,8 @@ const AddEditLocationView: React.FC<AddEditLocationViewProps> = ({ setActivePage
         <form onSubmit={handleSubmit}>
             <div className="flex items-center text-sm text-slate-500 mb-6">
                 <span onClick={() => setActivePage('Dashboards')} className="cursor-pointer hover:text-primary">Home</span>
+                <ChevronRightIcon className="w-4 h-4 mx-1.5 text-slate-300" />
+                <span onClick={() => setActivePage('Master Management')} className="cursor-pointer hover:text-primary">Master Management</span>
                 <ChevronRightIcon className="w-4 h-4 mx-1.5 text-slate-300" />
                 <span onClick={() => onCancel()} className="cursor-pointer hover:text-primary">Location</span>
                 <ChevronRightIcon className="w-4 h-4 mx-1.5 text-slate-300" />
@@ -396,9 +464,58 @@ const Location: React.FC<LocationProps> = ({ setActivePage }) => {
 
     const fetchLocations = async () => {
         setIsLoading(true);
-        const { data, error } = await supabase.from('locations').select('*');
-        if (error) console.error("Error fetching locations:", error.message);
-        else setLocations(data as Location[] || []);
+        
+        // Fetch locations
+        const { data: locationsData, error: locationsError } = await supabase.from('locations').select('*');
+        if (locationsError) {
+            console.error("Error fetching locations:", locationsError.message);
+            setIsLoading(false);
+            return;
+        }
+        
+        // Fetch employee counts for each location
+        const { data: employeesData, error: employeesError } = await supabase
+            .from('employees')
+            .select('location')
+            .eq('status', 'Active');
+            
+        // Fetch sub-location counts for each location
+        const { data: subLocationsData, error: subLocationsError } = await supabase
+            .from('sub_locations')
+            .select('locationName')
+            .eq('status', 'active');
+            
+        if (employeesError) console.error("Error fetching employees:", employeesError.message);
+        if (subLocationsError) console.error("Error fetching sub-locations:", subLocationsError.message);
+        
+        // Count employees per location
+        const employeeCounts: Record<string, number> = {};
+        if (employeesData) {
+            employeesData.forEach(emp => {
+                if (emp.location) {
+                    employeeCounts[emp.location] = (employeeCounts[emp.location] || 0) + 1;
+                }
+            });
+        }
+        
+        // Count sub-locations per location
+        const subLocationCounts: Record<string, number> = {};
+        if (subLocationsData) {
+            subLocationsData.forEach(subLoc => {
+                if (subLoc.locationName) {
+                    subLocationCounts[subLoc.locationName] = (subLocationCounts[subLoc.locationName] || 0) + 1;
+                }
+            });
+        }
+        
+        // Update locations with counts
+        const updatedLocations = (locationsData || []).map(location => ({
+            ...location,
+            employeeCount: employeeCounts[location.name] || 0,
+            subLocationCount: subLocationCounts[location.name] || 0
+        }));
+        
+        setLocations(updatedLocations as Location[]);
         setIsLoading(false);
     };
 

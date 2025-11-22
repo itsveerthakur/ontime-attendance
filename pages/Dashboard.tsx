@@ -92,6 +92,14 @@ const Dashboard: React.FC<DashboardProps> = ({ setActivePage }) => {
     // Separate state for Salary Card Filters to allow independent toggling
     const [salaryCardMonth, setSalaryCardMonth] = useState<string>(new Date().toLocaleString('default', { month: 'long' }));
     const [salaryCardYear, setSalaryCardYear] = useState<number>(new Date().getFullYear());
+    
+    // Deductions breakdown modal state
+    const [showDeductionsModal, setShowDeductionsModal] = useState(false);
+    const [deductionsBreakdown, setDeductionsBreakdown] = useState({ totalPF: 0, totalESIC: 0, totalAdvance: 0 });
+    
+    // Employer additionals breakdown state
+    const [showEmployerModal, setShowEmployerModal] = useState(false);
+    const [employerBreakdown, setEmployerBreakdown] = useState({ totalEmployerPF: 0, totalEmployerESIC: 0 });
 
     const [stats, setStats] = useState<DashboardStats>({
         onRollCount: 0,
@@ -156,6 +164,8 @@ const Dashboard: React.FC<DashboardProps> = ({ setActivePage }) => {
 
                 // Salary Stats (Filtered by Salary Card Selectors)
                 let tCost = 0, tDed = 0, tNet = 0, tProcessed = 0;
+                let tPF = 0, tESIC = 0, tAdvance = 0;
+                let tEmployerPF = 0, tEmployerESIC = 0;
                 if (salaryRes.data) {
                     salaryRes.data.forEach((r: any) => {
                         if (r.status === 'Locked') {
@@ -165,10 +175,27 @@ const Dashboard: React.FC<DashboardProps> = ({ setActivePage }) => {
                                 tCost += Number(sd.grossWithArrears || 0);
                                 tDed += Number(sd.totalDeduction || 0);
                                 tNet += Number(sd.netInHand || 0);
+                                tPF += Number(sd.epf || 0);
+                                tESIC += Number(sd.esic || 0);
+                                tAdvance += Number(sd.advance || 0);
+                                
+                                // Calculate employer contributions from employerAdditionalBreakdown array
+                                if (sd.employerAdditionalBreakdown && Array.isArray(sd.employerAdditionalBreakdown)) {
+                                    sd.employerAdditionalBreakdown.forEach((item: any) => {
+                                        if (item.name === 'EPF') {
+                                            tEmployerPF += Number(item.earned || item.amount || 0);
+                                        } else if (item.name === 'ESIC') {
+                                            tEmployerESIC += Number(item.earned || item.amount || 0);
+                                        }
+                                    });
+                                }
                             }
                         }
                     });
                 }
+                
+                setDeductionsBreakdown({ totalPF: tPF, totalESIC: tESIC, totalAdvance: tAdvance });
+                setEmployerBreakdown({ totalEmployerPF: tEmployerPF, totalEmployerESIC: tEmployerESIC });
 
                 setStats({
                     onRollCount: onRoll,
@@ -199,7 +226,34 @@ const Dashboard: React.FC<DashboardProps> = ({ setActivePage }) => {
     }, [currentMonth, currentYear, salaryCardMonth, salaryCardYear]);
 
     const handlePrint = () => {
-        window.print();
+        const dashboardContent = document.querySelector('.dashboard-content')?.innerHTML;
+        const newWindow = window.open('', '_blank');
+        if (newWindow && dashboardContent) {
+            newWindow.document.write(`
+                <!DOCTYPE html>
+                <html>
+                <head>
+                    <title>HR Analytics Dashboard</title>
+                    <script src="https://cdn.tailwindcss.com"></script>
+                    <style>
+                        @media print {
+                            @page { size: A4 landscape; margin: 15mm 10mm; }
+                            body { margin: 0; padding: 0; }
+                            .no-print { display: none !important; }
+                        }
+                    </style>
+                </head>
+                <body class="bg-white p-4">
+                    ${dashboardContent}
+                    <div class="mt-6 text-center no-print">
+                        <button onclick="window.print()" class="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 mr-4">Print</button>
+                        <button onclick="window.close()" class="bg-gray-600 text-white px-6 py-2 rounded-lg hover:bg-gray-700">Close</button>
+                    </div>
+                </body>
+                </html>
+            `);
+            newWindow.document.close();
+        }
     };
 
     const handleDownloadSummary = () => {
@@ -231,7 +285,7 @@ const Dashboard: React.FC<DashboardProps> = ({ setActivePage }) => {
     };
 
     return (
-        <div>
+        <div className="dashboard-content">
             {/* Header */}
             <div className="flex flex-col md:flex-row justify-between items-center mb-8 no-print">
                 <div>
@@ -381,10 +435,70 @@ const Dashboard: React.FC<DashboardProps> = ({ setActivePage }) => {
                                     <span className="text-slate-600">Total Net Payable</span>
                                     <span className="font-bold text-green-600">{formatCurrency(stats.totalNetPay)}</span>
                                 </div>
-                                <div className="flex justify-between text-sm border-b border-slate-50 pb-2">
+                                <div className="flex justify-between items-center text-sm border-b border-slate-50 pb-2">
                                     <span className="text-slate-600">Total Deductions</span>
-                                    <span className="font-bold text-red-500">{formatCurrency(stats.totalDeductions)}</span>
+                                    <div className="flex items-center space-x-2">
+                                        <span className="font-bold text-red-500">{formatCurrency(stats.totalDeductions)}</span>
+                                        <button 
+                                            onClick={() => setShowDeductionsModal(!showDeductionsModal)}
+                                            className="w-5 h-5 bg-red-500 text-white rounded-full flex items-center justify-center text-xs hover:bg-red-600 transition-colors"
+                                        >
+                                            {showDeductionsModal ? '−' : '+'}
+                                        </button>
+                                    </div>
                                 </div>
+                                
+                                {/* Expandable Deductions Breakdown */}
+                                {showDeductionsModal && (
+                                    <div className="mt-3 p-3 bg-slate-50 rounded-lg border border-slate-200">
+                                        <p className="text-xs text-slate-500 mb-3">Breakdown for {salaryCardMonth} {salaryCardYear}</p>
+                                        <div className="space-y-2">
+                                            <div className="flex justify-between text-xs">
+                                                <span className="text-slate-600">Employee PF</span>
+                                                <span className="font-semibold text-blue-600">{formatCurrency(deductionsBreakdown.totalPF)}</span>
+                                            </div>
+                                            <div className="flex justify-between text-xs">
+                                                <span className="text-slate-600">Employee ESIC</span>
+                                                <span className="font-semibold text-green-600">{formatCurrency(deductionsBreakdown.totalESIC)}</span>
+                                            </div>
+                                            <div className="flex justify-between text-xs">
+                                                <span className="text-slate-600">Advance</span>
+                                                <span className="font-semibold text-orange-600">{formatCurrency(deductionsBreakdown.totalAdvance)}</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
+                                
+                                <div className="flex justify-between items-center text-sm border-b border-slate-50 pb-2">
+                                    <span className="text-slate-600">Total Employer Additionals</span>
+                                    <div className="flex items-center space-x-2">
+                                        <span className="font-bold text-purple-600">{formatCurrency(employerBreakdown.totalEmployerPF + employerBreakdown.totalEmployerESIC)}</span>
+                                        <button 
+                                            onClick={() => setShowEmployerModal(!showEmployerModal)}
+                                            className="w-5 h-5 bg-purple-500 text-white rounded-full flex items-center justify-center text-xs hover:bg-purple-600 transition-colors"
+                                        >
+                                            {showEmployerModal ? '−' : '+'}
+                                        </button>
+                                    </div>
+                                </div>
+                                
+                                {/* Expandable Employer Additionals Breakdown */}
+                                {showEmployerModal && (
+                                    <div className="mt-3 p-3 bg-purple-50 rounded-lg border border-purple-200">
+                                        <p className="text-xs text-slate-500 mb-3">Employer Contributions for {salaryCardMonth} {salaryCardYear}</p>
+                                        <div className="space-y-2">
+                                            <div className="flex justify-between text-xs">
+                                                <span className="text-slate-600">Employer's EPF</span>
+                                                <span className="font-semibold text-blue-600">{formatCurrency(employerBreakdown.totalEmployerPF)}</span>
+                                            </div>
+                                            <div className="flex justify-between text-xs">
+                                                <span className="text-slate-600">Employer's ESIC</span>
+                                                <span className="font-semibold text-green-600">{formatCurrency(employerBreakdown.totalEmployerESIC)}</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
+                                
                                 <div className="flex justify-between text-sm pt-1">
                                     <span className="text-slate-600">Employees Processed</span>
                                     <span className="font-bold text-blue-600">{stats.processedEmployees} / {stats.totalActive}</span>
@@ -468,6 +582,8 @@ const Dashboard: React.FC<DashboardProps> = ({ setActivePage }) => {
                     </div>
                 </div>
             </div>
+            
+
         </div>
     );
 };
