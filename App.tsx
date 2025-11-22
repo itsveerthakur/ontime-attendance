@@ -26,6 +26,7 @@ import SubLocation from './pages/SubLocation';
 import RoleManagement from './pages/RoleManagement';
 import ProfilePage from './pages/ProfilePage';
 import SettingsPage from './pages/SettingsPage';
+import MobileAttendance from './pages/MobileAttendance';
 
 export type Page = 
   | 'Dashboards' 
@@ -49,12 +50,14 @@ export type Page =
   | 'Sub Location'
   | 'Role Management'
   | 'Profile'
-  | 'Settings';
+  | 'Settings'
+  | 'Mobile Attendance';
 
 const App: React.FC = () => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [currentUser, setCurrentUser] = useState<Employee | null>(null);
   const [activePage, setActivePage] = useState<Page>('Dashboards');
+  const [payrollKey, setPayrollKey] = useState(0);
 
   // Check for persisted login on mount
   useEffect(() => {
@@ -99,9 +102,9 @@ const App: React.FC = () => {
       case 'Request':
         return <Request />;
       case 'Payroll':
-        return <Payroll />;
+        return <Payroll key={payrollKey} />;
       case 'Salary Dashboard':
-        return <Payroll initialView="Salary Dashboard" />;
+        return <Payroll key={payrollKey + 1000} initialView="Salary Dashboard" />;
       case 'Reports':
         return <Reports />;
       case 'Compliance Management':
@@ -130,6 +133,8 @@ const App: React.FC = () => {
         return <ProfilePage currentUser={currentUser} />;
       case 'Settings':
         return <SettingsPage />;
+      case 'Mobile Attendance':
+        return <MobileAttendance currentUser={currentUser} />;
       default:
         return <Dashboard setActivePage={setActivePage} />;
     }
@@ -139,10 +144,17 @@ const App: React.FC = () => {
     return <LoginPage onLoginSuccess={handleLoginSuccess} />;
   }
 
+  const handlePageChange = (page: Page) => {
+    if (page === 'Payroll') {
+      setPayrollKey(prev => prev + 1);
+    }
+    setActivePage(page);
+  };
+
   return (
     <MainLayout 
       activePage={activePage} 
-      setActivePage={setActivePage} 
+      setActivePage={handlePageChange} 
       currentUser={currentUser}
       onLogout={handleLogout}
     >
