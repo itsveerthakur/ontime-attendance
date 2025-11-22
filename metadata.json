@@ -1,0 +1,7 @@
+{
+  "name": "On Time attendance",
+  "description": "A modern and efficient attendance and HR management system.",
+  "requestFramePermissions": [
+    "geolocation"
+  ]
+}

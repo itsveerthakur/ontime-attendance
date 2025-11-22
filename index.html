@@ -1,0 +1,150 @@
+
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>On Time attendance</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- SheetJS (xlsx) library for parsing Excel files -->
+    <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            colors: {
+              primary: {
+                light: '#3b82f6', // blue-500
+                DEFAULT: '#2563eb', // blue-600
+                dark: '#1d4ed8',  // blue-700
+              },
+              secondary: '#f8fafc', // slate-50
+              accent: '#14b8a6', // teal-500
+            }
+          }
+        }
+      }
+    </script>
+    <style>
+      @import url('https://rsms.me/inter/inter.css');
+      html { font-family: 'Inter', sans-serif; }
+      @supports (font-variation-settings: normal) {
+        html { font-family: 'Inter var', sans-serif; }
+      }
+
+      body {
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
+      }
+      @media print {
+        /* Hide everything by default */
+        body > * {
+          visibility: hidden;
+        }
+        
+        /* Hide UI elements strictly */
+        .no-print {
+          display: none !important;
+        }
+
+        /* --- Payslip Logic --- */
+        /* Only show the modal container if it exists, but manage children visibility */
+        body > div:has(#printable-area), 
+        body > #root:has(#printable-area) {
+           visibility: visible;
+        }
+
+        /* Style the printable area specifically */
+        #printable-area {
+          visibility: visible;
+          position: absolute;
+          left: 0;
+          top: 0;
+          width: 100%;
+          margin: 0;
+          padding: 0;
+          background: white;
+          z-index: 9999;
+        }
+        
+        #printable-area * {
+            visibility: visible;
+        }
+
+        /* --- Employee View Modal Logic --- */
+        /* When printing from the view modal */
+        #printable-modal {
+            visibility: visible;
+            position: absolute;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            margin: 0;
+            padding: 0;
+            background: white;
+            z-index: 9999;
+            overflow: visible !important;
+        }
+        #printable-modal * {
+            visibility: visible;
+        }
+        /* Ensure background colors print */
+        * {
+          -webkit-print-color-adjust: exact !important;
+          print-color-adjust: exact !important;
+        }
+        
+        /* Remove shadows and borders for cleaner print */
+        .payslip-container {
+            box-shadow: none !important;
+            border: none !important;
+        }
+      }
+      /* Custom scrollbar for a better look */
+      ::-webkit-scrollbar {
+        width: 8px;
+        height: 8px;
+      }
+      ::-webkit-scrollbar-track {
+        background: #f1f5f9;
+      }
+      ::-webkit-scrollbar-thumb {
+        background: #cbd5e1;
+        border-radius: 10px;
+      }
+      ::-webkit-scrollbar-thumb:hover {
+        background: #94a3b8;
+      }
+      .fade-in {
+        animation: fadeInAnimation ease 0.5s;
+        animation-iteration-count: 1;
+        animation-fill-mode: forwards;
+      }
+      @keyframes fadeInAnimation {
+        0% { opacity: 0; }
+        100% { opacity: 1; }
+      }
+    </style>
+    <!-- IMPORTANT: The previous Google Maps API key appeared to be invalid and was likely causing a critical loading error. -->
+    <!-- Please replace YOUR_GOOGLE_MAPS_API_KEY_HERE with a valid key from your Google Cloud project to enable map features. -->
+    <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyAT38-uF0rGjMKbc8mLP3c6ZPRWQa93lRM&libraries=places"></script>
+  <script type="importmap">
+{
+  "imports": {
+    "react/": "https://aistudiocdn.com/react@^19.2.0/",
+    "react": "https://aistudiocdn.com/react@^19.2.0",
+    "@supabase/supabase-js": "https://aistudiocdn.com/@supabase/supabase-js@^2.82.0",
+    "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.0/",
+    "react-dom": "https://aistudiocdn.com/react-dom@^19.2.0"
+  }
+}
+</script>
+<link rel="stylesheet" href="/index.css">
+</head>
+  <body class="bg-slate-50">
+    <div id="root"></div>
+    <script type="module" src="/index.tsx"></script>
+  </body>
+</html>
