@@ -1,4 +1,3 @@
-
 import React from 'react';
 import {
   DashboardIcon, MasterMgmtIcon, AttendanceIcon, ShiftIcon,
@@ -16,6 +15,7 @@ interface SidebarProps {
 
 const menuItems: { name: Page; icon: React.ReactNode }[] = [
   { name: 'Dashboards', icon: <DashboardIcon className="w-6 h-6" /> },
+  { name: 'Mobile Attendance', icon: <MobileIcon className="w-6 h-6" /> },
   { name: 'Master Management', icon: <MasterMgmtIcon className="w-6 h-6" /> },
   { name: 'Attendance Management', icon: <AttendanceIcon className="w-6 h-6" /> },
   { name: 'Shift Management', icon: <ShiftIcon className="w-6 h-6" /> },
@@ -25,7 +25,6 @@ const menuItems: { name: Page; icon: React.ReactNode }[] = [
   { name: 'Reports', icon: <ReportsIcon className="w-6 h-6" /> },
   { name: 'Compliance Management', icon: <ComplianceIcon className="w-6 h-6" /> },
   { name: 'Support', icon: <SupportIcon className="w-6 h-6" /> },
-  { name: 'Mobile Attendance', icon: <MobileIcon className="w-6 h-6" /> },
 ];
 
 const Sidebar: React.FC<SidebarProps> = ({ activePage, setActivePage, isCollapsed, onToggle }) => {
