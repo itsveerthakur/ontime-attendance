@@ -13,7 +13,7 @@ const MobileAttendance: React.FC<MobileAttendanceProps> = ({ currentUser }) => {
   const [time, setTime] = useState(new Date());
   const [isClockedIn, setIsClockedIn] = useState(false);
   const [locationStatus, setLocationStatus] = useState<'Checking' | 'Inside' | 'Outside' | 'Error' | 'Denied'>('Checking');
-  const [currentCoords, setCurrentCoords] = useState<{ lat: number; lng: number } | null>(0);
+  const [currentCoords, setCurrentCoords] = useState<{ lat: number; lng: number } | null>(null);
   const [currentAddress, setCurrentAddress] = useState<string | null>(null);
   const [isGeocoding, setIsGeocoding] = useState(false);
   const [officeCoords, setOfficeCoords] = useState<{ lat: number; lng: number; radius: number; name: string; address: string } | null>(null);
@@ -23,7 +23,6 @@ const MobileAttendance: React.FC<MobileAttendanceProps> = ({ currentUser }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
-  // Update Clock every second
   useEffect(() => {
     const timer = setInterval(() => setTime(new Date()), 1000);
     return () => clearInterval(timer);
@@ -31,7 +30,6 @@ const MobileAttendance: React.FC<MobileAttendanceProps> = ({ currentUser }) => {
 
   const fetchOfficeLocation = async () => {
     if (!currentUser?.location) {
-      console.warn("User has no assigned location in profile");
       setLocationStatus('Error');
       return;
     }
@@ -42,10 +40,7 @@ const MobileAttendance: React.FC<MobileAttendanceProps> = ({ currentUser }) => {
       .ilike('name', currentUser.location.trim())
       .maybeSingle();
 
-    if (error) {
-      console.error("Failed to fetch office coordinates:", error);
-      setLocationStatus('Error');
-    } else if (!data) {
+    if (error || !data) {
       setLocationStatus('Error');
     } else {
       setOfficeCoords({
@@ -68,12 +63,6 @@ const MobileAttendance: React.FC<MobileAttendanceProps> = ({ currentUser }) => {
       return;
     }
 
-    const geoOptions = {
-      enableHighAccuracy: true,
-      timeout: 15000,
-      maximumAge: 0
-    };
-
     const watchId = navigator.geolocation.watchPosition(
       (position) => {
         setCurrentCoords({
@@ -82,31 +71,25 @@ const MobileAttendance: React.FC<MobileAttendanceProps> = ({ currentUser }) => {
         });
       },
       (error) => {
-        console.error("Geolocation error:", error);
-        if (error.code === error.PERMISSION_DENIED) {
-            setLocationStatus('Denied');
-        } else {
-            setLocationStatus('Error');
-        }
+        if (error.code === error.PERMISSION_DENIED) setLocationStatus('Denied');
+        else setLocationStatus('Error');
       },
-      geoOptions
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
     );
 
     return () => navigator.geolocation.clearWatch(watchId);
   }, []);
 
   useEffect(() => {
-    if (currentCoords && window.google && window.google.maps) {
+    if (currentCoords && window.google?.maps?.Geocoder) {
       setIsGeocoding(true);
       const geocoder = new window.google.maps.Geocoder();
-      const latlng = { lat: currentCoords.lat, lng: currentCoords.lng };
-      
-      geocoder.geocode({ location: latlng }, (results: any, status: any) => {
+      geocoder.geocode({ location: { lat: currentCoords.lat, lng: currentCoords.lng } }, (results: any, status: any) => {
         setIsGeocoding(false);
         if (status === "OK" && results[0]) {
           setCurrentAddress(results[0].formatted_address);
         } else {
-          setCurrentAddress(`Location: ${currentCoords.lat.toFixed(4)}, ${currentCoords.lng.toFixed(4)}`);
+          setCurrentAddress(`${currentCoords.lat.toFixed(4)}, ${currentCoords.lng.toFixed(4)}`);
         }
       });
     }
@@ -119,59 +102,44 @@ const MobileAttendance: React.FC<MobileAttendanceProps> = ({ currentUser }) => {
       const φ2 = officeCoords.lat * Math.PI / 180;
       const Δφ = (officeCoords.lat - currentCoords.lat) * Math.PI / 180;
       const Δλ = (officeCoords.lng - currentCoords.lng) * Math.PI / 180;
-
-      const a = Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
-                Math.cos(φ1) * Math.cos(φ2) *
-                Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
-      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-      const distance = R * c; 
-      
-      if (distance <= (officeCoords.radius + 20)) {
-        setLocationStatus('Inside');
-      } else {
-        setLocationStatus('Outside');
-      }
+      const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) + Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ/2) * Math.sin(Δλ/2);
+      const distance = R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)); 
+      setLocationStatus(distance <= (officeCoords.radius + 25) ? 'Inside' : 'Outside');
     }
   }, [currentCoords, officeCoords]);
 
-  const handleRefresh = () => {
-    setLocationStatus('Checking');
-    setCurrentAddress(null);
-    fetchOfficeLocation();
-  };
-
   const captureFrame = (): string | null => {
     if (videoRef.current && canvasRef.current) {
-      const video = videoRef.current;
       const canvas = canvasRef.current;
-      // Capture at a standard manageable resolution
       canvas.width = 640;
-      canvas.height = 480;
+      canvas.height = 640;
       const ctx = canvas.getContext('2d');
       if (ctx) {
-        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-        // Using lower quality (0.5) to ensure payload is within reliable limits
-        return canvas.toDataURL('image/jpeg', 0.5).split(',')[1];
+        const video = videoRef.current;
+        const size = Math.min(video.videoWidth, video.videoHeight);
+        const x = (video.videoWidth - size) / 2;
+        const y = (video.videoHeight - size) / 2;
+        ctx.drawImage(video, x, y, size, size, 0, 0, 640, 640);
+        return canvas.toDataURL('image/jpeg', 0.6).split(',')[1];
       }
     }
     return null;
   };
 
-  const verifyFace = async (capturedBase64: string): Promise<boolean> => {
+  const verifyFace = async (liveBase64: string): Promise<boolean> => {
     if (!currentUser?.photoUrl) {
-      setScanError("No profile photo found. Please upload a photo to your profile first.");
+      setScanError("Reference photo missing in your profile.");
       return false;
     }
 
     try {
-      /* Always use const ai = new GoogleGenAI({apiKey: process.env.API_KEY}); as per guidelines */
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-
       let profileBase64 = '';
+
       if (currentUser.photoUrl.startsWith('data:')) {
         profileBase64 = currentUser.photoUrl.split(',')[1];
       } else {
-        const res = await fetch(currentUser.photoUrl);
+        const res = await fetch(currentUser.photoUrl, { mode: 'cors' });
         const blob = await res.blob();
         profileBase64 = await new Promise((resolve) => {
           const reader = new FileReader();
@@ -180,24 +148,13 @@ const MobileAttendance: React.FC<MobileAttendanceProps> = ({ currentUser }) => {
         });
       }
 
-      /* Use ai.models.generateContent and result.text as per guidelines. Use gemini-3-flash-preview as per model selection rules. */
-      const result = await ai.models.generateContent({
+      const response = await ai.models.generateContent({
         model: 'gemini-3-flash-preview',
         contents: [{
           parts: [
-            { text: "Identity Verification Task: Compare these two human faces and determine if they belong to the same person. Return JSON with 'isMatch' (boolean) and 'reason' (string)." },
-            {
-              inlineData: {
-                mimeType: "image/jpeg",
-                data: profileBase64
-              }
-            },
-            {
-              inlineData: {
-                mimeType: "image/jpeg", 
-                data: capturedBase64
-              }
-            }
+            { text: "Task: Compare Face ID. Image 1 is the reference ID. Image 2 is the live user. Determine if they are the same person. Be strict about facial geometry but lenient with lighting, background, or minor changes like glasses/shaving. Return JSON." },
+            { inlineData: { mimeType: "image/jpeg", data: profileBase64 } },
+            { inlineData: { mimeType: "image/jpeg", data: liveBase64 } }
           ]
         }],
         config: {
@@ -206,33 +163,29 @@ const MobileAttendance: React.FC<MobileAttendanceProps> = ({ currentUser }) => {
             type: Type.OBJECT,
             properties: {
               isMatch: { type: Type.BOOLEAN },
-              reason: { type: Type.STRING }
+              reason: { type: Type.STRING, description: "Detailed reason for match or mismatch" }
             },
             required: ["isMatch", "reason"]
           }
         }
       });
 
-      /* Access text property directly. Do not use text() method. */
-      const text = result.text;
-      if (!text) throw new Error("Verification response was empty");
-
-      const response = JSON.parse(text);
-      if (!response.isMatch) {
-        setScanError(`Verification failed: ${response.reason}`);
+      const result = JSON.parse(response.text || '{}');
+      if (!result.isMatch) {
+        setScanError(`Identity mismatch: ${result.reason}`);
         return false;
       }
       return true;
     } catch (err: any) {
-      console.error("Face verification error:", err);
-      setScanError("Face verification failed. Check internet connection.");
+      console.error("Face ID Error:", err);
+      setScanError("Verification service unavailable. Please check lighting and try again.");
       return false;
     }
   };
 
   const handleAction = async () => {
     if (locationStatus !== 'Inside') {
-      alert("Unauthorized: You are outside the office geofence.");
+      alert("Clock-in restricted: You must be within the office geofence.");
       return;
     }
 
@@ -246,126 +199,111 @@ const MobileAttendance: React.FC<MobileAttendanceProps> = ({ currentUser }) => {
       
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
-        videoRef.current.play();
+        await videoRef.current.play();
       }
 
-      // Small delay to let user position face
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      
-      const capturedBase64 = captureFrame();
-      
-      // Stop camera immediately
-      stream.getTracks().forEach(track => track.stop());
-      
-      if (!capturedBase64) throw new Error("Failed to capture photo from camera.");
-
+      await new Promise(r => setTimeout(r, 2200));
+      const livePhoto = captureFrame();
+      stream.getTracks().forEach(t => t.stop());
       setIsScanning(false);
-      setIsVerifying(true);
-
-      const isVerified = await verifyFace(capturedBase64);
-
-      if (isVerified) {
-        setIsClockedIn(!isClockedIn);
-        // Note: Success state could be logged to Supabase here
+      
+      if (livePhoto) {
+        setIsVerifying(true);
+        const success = await verifyFace(livePhoto);
+        setIsVerifying(false);
+        if (success) {
+          setIsClockedIn(!isClockedIn);
+          alert(isClockedIn ? "Logged out successfully." : "Logged in successfully.");
+        }
       }
-      
-      setIsVerifying(false);
-    } catch (err: any) {
+    } catch (err) {
       setIsScanning(false);
-      setIsVerifying(false);
-      console.error("Capture process error:", err);
-      setScanError(err.message || "Face scanning failed.");
+      setScanError("Camera access failed. Check permissions.");
     }
   };
 
   return (
-    <div className="max-w-md mx-auto h-full flex flex-col bg-slate-50 shadow-2xl rounded-[3rem] overflow-hidden border-[12px] border-slate-900 relative">
-      <div className="bg-[#1e2736] text-white p-8 pt-10 pb-16 relative">
-        <div className="flex justify-between items-start">
-          <div className="flex items-center space-x-3">
-            <div className="relative">
-              {currentUser?.photoUrl ? (
-                <img src={currentUser.photoUrl} className="w-12 h-12 rounded-full object-cover border-2 border-primary" />
-              ) : (
-                <div className="w-12 h-12 rounded-full bg-primary flex items-center justify-center font-bold text-lg">
-                  {currentUser?.firstName?.charAt(0)}
-                </div>
-              )}
-              <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 rounded-full border-2 border-[#1e2736]"></div>
-            </div>
-            <div>
-              <h2 className="font-bold text-lg leading-tight">{currentUser?.firstName} {currentUser?.lastName}</h2>
-              <p className="text-xs text-slate-400">{currentUser?.designation || 'Employee'}</p>
-            </div>
-          </div>
-          <button onClick={handleRefresh} className="p-2 bg-white/10 rounded-xl hover:bg-white/20 transition-colors">
-            <RefreshIcon className={`w-5 h-5 ${(locationStatus === 'Checking' || isGeocoding) ? 'animate-spin' : ''}`} />
-          </button>
-        </div>
+    <div className="max-w-md mx-auto space-y-6">
+      <div className="bg-white rounded-3xl p-8 shadow-xl border border-slate-100 text-center relative overflow-hidden">
+         <div className="absolute top-0 right-0 p-4">
+             <button onClick={() => { setLocationStatus('Checking'); fetchOfficeLocation(); }} className="p-2 text-slate-400 hover:text-primary transition-colors">
+                <RefreshIcon className="w-5 h-5" />
+             </button>
+         </div>
+         <p className="text-sm font-bold text-slate-400 uppercase tracking-widest mb-2">{time.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}</p>
+         <h1 className="text-6xl font-black text-slate-800 tracking-tighter">
+            {time.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+         </h1>
+      </div>
 
-        <div className="mt-10 text-center animate-fadeIn">
-          <p className="text-xs font-semibold text-slate-400 tracking-[0.2em] mb-2">{time.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' }).toUpperCase()}</p>
-          <h1 className="text-6xl font-bold tracking-tight">{time.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</h1>
-          <div className="flex items-start justify-center mt-4 text-slate-300 px-4 min-h-[40px]">
-             {currentAddress ? (
-               <><MapPinIcon className="w-3.5 h-3.5 mr-2 opacity-70 mt-0.5 flex-shrink-0" /><span className="text-[10px] sm:text-xs font-medium tracking-wide italic leading-snug">{currentAddress}</span></>
-             ) : (
-               <div className="flex items-center space-x-2 text-slate-400"><LoaderIcon className="w-3.5 h-3.5 animate-spin" /><span className="text-[10px] sm:text-xs italic tracking-wide">Syncing GPS...</span></div>
-             )}
+      <div className={`rounded-2xl p-4 border transition-all ${
+          locationStatus === 'Inside' ? 'bg-green-50 border-green-200' : 
+          locationStatus === 'Outside' ? 'bg-amber-50 border-amber-200' : 'bg-slate-50 border-slate-200'
+      }`}>
+        <div className="flex items-start space-x-3">
+          <div className={`p-2 rounded-lg ${
+              locationStatus === 'Inside' ? 'bg-green-500 text-white' : 
+              locationStatus === 'Outside' ? 'bg-amber-500 text-white' : 'bg-slate-400 text-white'
+          }`}>
+            <MapPinIcon className="w-5 h-5" />
           </div>
+          <div className="flex-1">
+             <h3 className="font-bold text-slate-800 text-sm">
+                {locationStatus === 'Checking' ? 'Verifying GPS...' : 
+                 locationStatus === 'Inside' ? 'Authorized Area' : 
+                 locationStatus === 'Outside' ? 'Outside Geofence' : 'GPS Signal Weak'}
+             </h3>
+             <p className="text-xs text-slate-500 mt-0.5 truncate">
+                {isGeocoding ? 'Locating...' : currentAddress || 'Acquiring Signal...'}
+             </p>
+          </div>
+          {locationStatus === 'Checking' && <LoaderIcon className="w-4 h-4 animate-spin text-slate-400" />}
         </div>
       </div>
 
-      <div className="flex-1 -mt-8 bg-white rounded-t-[3rem] shadow-[0_-15px_30px_rgba(0,0,0,0.1)] p-6 space-y-6">
-        <div className="grid grid-cols-2 gap-4">
-          <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm flex flex-col items-center justify-center text-center">
-             <div className="p-2 bg-red-50 rounded-full mb-2"><MapPinIcon className={`w-5 h-5 ${locationStatus === 'Inside' ? 'text-green-600' : 'text-red-500'}`} /></div>
-             <p className="text-[10px] uppercase font-bold text-slate-400 mb-1">Office</p>
-             <div className="flex items-center space-x-1">
-                {locationStatus === 'Checking' ? <LoaderIcon className="w-4 h-4 text-primary animate-spin" /> : <span className={`text-sm font-bold ${locationStatus === 'Inside' ? 'text-green-600' : 'text-red-500'}`}>{locationStatus}</span>}
+      <div className="relative aspect-square rounded-3xl bg-slate-100 border-4 border-white shadow-2xl overflow-hidden flex flex-col items-center justify-center group">
+         {isScanning ? (
+             <video ref={videoRef} className="absolute inset-0 w-full h-full object-cover scale-x-[-1]" playsInline muted />
+         ) : isVerifying ? (
+             <div className="text-center">
+                 <LoaderIcon className="w-12 h-12 text-primary animate-spin mb-4 mx-auto" />
+                 <p className="font-bold text-slate-700 animate-pulse">Authenticating Face ID...</p>
              </div>
-          </div>
-          <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm flex flex-col items-center justify-center text-center">
-             <div className="p-2 bg-green-50 rounded-full mb-2"><ClockIcon className="w-5 h-5 text-green-600" /></div>
-             <p className="text-[10px] uppercase font-bold text-slate-400 mb-1">Status</p>
-             <p className="text-sm font-bold text-slate-800">{isClockedIn ? 'Working' : 'Out'}</p>
-          </div>
-        </div>
+         ) : (
+             <div className="text-center p-8">
+                 <div className={`w-24 h-24 rounded-full flex items-center justify-center mx-auto mb-6 shadow-inner transition-colors ${isClockedIn ? 'bg-red-100 text-red-500' : 'bg-green-100 text-green-500'}`}>
+                    {isClockedIn ? <LockClosedIcon className="w-12 h-12" /> : <FingerPrintIcon className="w-12 h-12" />}
+                 </div>
+                 <h2 className="text-2xl font-black text-slate-800 mb-2">{isClockedIn ? 'Shift in Progress' : 'Start Your Day'}</h2>
+                 <p className="text-sm text-slate-500">Look directly into the camera for verification.</p>
+             </div>
+         )}
+         
+         {scanError && (
+             <div className="absolute top-4 inset-x-4 bg-red-600 text-white text-xs font-bold p-3 rounded-xl flex items-center space-x-2 shadow-lg z-10">
+                <XCircleIcon className="w-5 h-5 flex-shrink-0" />
+                <span>{scanError}</span>
+             </div>
+         )}
 
-        <div className="flex flex-col items-center justify-center pt-4">
-          <button 
-            onClick={handleAction}
-            disabled={isScanning || isVerifying || locationStatus !== 'Inside'}
-            className={`relative z-10 w-48 h-48 rounded-full flex flex-col items-center justify-center text-white transition-all transform active:scale-95 shadow-2xl ${isClockedIn ? 'bg-gradient-to-br from-red-500 to-red-700' : 'bg-gradient-to-br from-green-500 to-green-700'} disabled:grayscale disabled:opacity-50 overflow-hidden`}
-          >
-            {isScanning ? (
-              <><LoaderIcon className="w-12 h-12 animate-spin mb-2" /><span className="text-xs font-bold uppercase tracking-widest">Scanning...</span></>
-            ) : isVerifying ? (
-              <><LoaderIcon className="w-12 h-12 animate-pulse mb-2" /><span className="text-xs font-bold uppercase tracking-widest">Verifying...</span></>
-            ) : (
-              <><LockClosedIcon className="w-10 h-10 mb-2 opacity-50" /><span className="text-2xl font-black uppercase tracking-tighter">{isClockedIn ? 'Clock Out' : 'Clock In'}</span><div className="flex items-center mt-2 bg-black/20 px-3 py-1 rounded-full space-x-1"><FingerPrintIcon className="w-3 h-3" /><span className="text-[10px] font-bold">Face ID</span></div></>
-            )}
-            {isScanning && (
-              <div className="absolute inset-0 z-20">
-                <video ref={videoRef} className="w-full h-full object-cover" playsInline muted />
-                <div className="absolute inset-0 border-4 border-white/50 rounded-full animate-pulse pointer-events-none"></div>
-              </div>
-            )}
-          </button>
-
-          {locationStatus !== 'Inside' && locationStatus !== 'Checking' && (
-            <div className="mt-4 px-4 py-2 bg-red-50 border border-red-200 rounded-lg text-red-700 text-xs font-bold flex items-center gap-2">
-              <XCircleIcon className="w-4 h-4" /> <span>Move inside Office Geofence</span>
-            </div>
-          )}
-          {scanError && (
-            <div className="mt-4 px-4 py-2 bg-red-50 border border-red-200 rounded-lg text-red-700 text-xs font-bold flex flex-col items-center gap-1 shadow-sm text-center">
-              <XCircleIcon className="w-5 h-5 text-red-500" />
-              <span>{scanError}</span>
-            </div>
-          )}
-        </div>
+         {isScanning && (
+             <div className="absolute inset-0 border-[60px] border-black/40 pointer-events-none flex items-center justify-center">
+                 <div className="w-full h-full border-2 border-primary/50 rounded-full border-dashed animate-spin-slow"></div>
+             </div>
+         )}
       </div>
+
+      <button 
+        onClick={handleAction}
+        disabled={isScanning || isVerifying || locationStatus !== 'Inside'}
+        className={`w-full py-5 rounded-2xl font-black text-xl shadow-lg transition-all transform active:scale-95 disabled:opacity-50 disabled:grayscale flex items-center justify-center space-x-3 ${
+            isClockedIn ? 'bg-red-600 hover:bg-red-700 text-white' : 'bg-primary hover:bg-primary-dark text-white'
+        }`}
+      >
+        {isScanning || isVerifying ? <LoaderIcon className="w-6 h-6 animate-spin" /> : <CheckCircleIcon className="w-6 h-6" />}
+        <span>{isClockedIn ? 'CLOCK OUT' : 'CLOCK IN'}</span>
+      </button>
+
       <canvas ref={canvasRef} className="hidden" />
     </div>
   );
