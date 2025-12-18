@@ -13,6 +13,7 @@ const MobileAttendance: React.FC<MobileAttendanceProps> = ({ currentUser }) => {
   const [locationStatus, setLocationStatus] = useState<'Checking' | 'Inside' | 'Outside' | 'Error' | 'Denied'>('Checking');
   const [currentCoords, setCurrentCoords] = useState<{ lat: number; lng: number } | null>(null);
   const [currentAddress, setCurrentAddress] = useState<string | null>(null);
+  const [isGeocoding, setIsGeocoding] = useState(false);
   const [officeCoords, setOfficeCoords] = useState<{ lat: number; lng: number; radius: number; name: string; address: string } | null>(null);
   const [isScanning, setIsScanning] = useState(false);
   const [scanError, setScanError] = useState<string | null>(null);
@@ -104,16 +105,26 @@ const MobileAttendance: React.FC<MobileAttendanceProps> = ({ currentUser }) => {
   // Reverse Geocoding for current physical location
   useEffect(() => {
     if (currentCoords && window.google && window.google.maps) {
+      setIsGeocoding(true);
       const geocoder = new window.google.maps.Geocoder();
       const latlng = { lat: currentCoords.lat, lng: currentCoords.lng };
       
       geocoder.geocode({ location: latlng }, (results: any, status: any) => {
+        setIsGeocoding(false);
         if (status === "OK" && results[0]) {
           setCurrentAddress(results[0].formatted_address);
         } else {
           console.error("Geocoder failed due to: " + status);
+          if (status === "REQUEST_DENIED") {
+              setDebugInfo(prev => prev + "\nError: Geocoding API is not enabled in your GCP console for this key.");
+          }
+          // FALLBACK: Use coordinates if geocoding fails so UI doesn't spin forever
+          setCurrentAddress(`Location: ${currentCoords.lat.toFixed(4)}, ${currentCoords.lng.toFixed(4)} (Address service restricted)`);
         }
       });
+    } else if (currentCoords && (!window.google || !window.google.maps)) {
+        // Handle case where Google Maps script didn't load
+        setCurrentAddress(`Location: ${currentCoords.lat.toFixed(4)}, ${currentCoords.lng.toFixed(4)}`);
     }
   }, [currentCoords]);
 
@@ -221,7 +232,7 @@ const MobileAttendance: React.FC<MobileAttendanceProps> = ({ currentUser }) => {
             className="p-2 bg-white/10 rounded-xl hover:bg-white/20 transition-colors"
             title="Refresh Location"
           >
-            <RefreshIcon className={`w-5 h-5 ${locationStatus === 'Checking' ? 'animate-spin' : ''}`} />
+            <RefreshIcon className={`w-5 h-5 ${(locationStatus === 'Checking' || isGeocoding) ? 'animate-spin' : ''}`} />
           </button>
         </div>
 
