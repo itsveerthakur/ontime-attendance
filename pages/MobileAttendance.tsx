@@ -164,16 +164,7 @@ const MobileAttendance: React.FC<MobileAttendanceProps> = ({ currentUser }) => {
     }
 
     try {
-      // Check for API key in environment variables
-      const apiKey = process.env.NEXT_PUBLIC_GEMINI_API_KEY || process.env.GEMINI_API_KEY;
-      if (!apiKey || apiKey === 'PLACEHOLDER_API_KEY') {
-        // Fallback: Simple verification based on image capture success
-        console.warn("AI verification unavailable, using fallback method");
-        setScanError(null);
-        return true; // Allow access if photo was captured successfully
-      }
-
-      const ai = new GoogleGenAI(apiKey);
+      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
       
       let profileBase64 = '';
       if (currentUser.photoUrl.startsWith('data:')) {
@@ -199,26 +190,33 @@ const MobileAttendance: React.FC<MobileAttendanceProps> = ({ currentUser }) => {
         }
       }
 
-      const response = await ai.getGenerativeModel({ model: 'gemini-1.5-flash' }).generateContent({
+      const response = await ai.models.generateContent({
+        model: 'gemini-3-flash-preview',
         contents: [{
           parts: [
-            { text: "Identity Verification: Compare these two human faces. Image 1 is the profile reference. Image 2 is a live capture. Determine if they are the exact same person. Be strict. Ignore differences in background, lighting, or clothing. focus on facial structure and features. Return JSON with format: {\"isMatch\": boolean, \"confidence\": number, \"reason\": string}" },
+            { text: "Identity Verification: Compare these two human faces. Image 1 is the profile reference. Image 2 is a live capture. Determine if they are the exact same person. Be strict. Ignore differences in background, lighting, or clothing. focus on facial structure and features. Return JSON." },
             { inlineData: { mimeType: 'image/jpeg', data: profileBase64 } },
             { inlineData: { mimeType: 'image/jpeg', data: capturedBase64 } }
           ]
-        }]
+        }],
+        config: {
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              isMatch: { type: Type.BOOLEAN },
+              confidence: { type: Type.NUMBER, description: "Confidence score between 0 and 1" },
+              reason: { type: Type.STRING }
+            },
+            required: ["isMatch"]
+          }
+        }
       });
 
-      const resultText = response.response.text();
+      const resultText = response.text;
       if (!resultText) throw new Error("Empty response from AI");
 
-      let result;
-      try {
-        result = JSON.parse(resultText);
-      } catch (parseError) {
-        console.error("Failed to parse AI response:", resultText);
-        throw new Error("Invalid response format from verification service");
-      }
+      const result = JSON.parse(resultText);
       if (!result.isMatch) {
         setScanError(`Verification Failed: ${result.reason || 'Facial mismatch detected.'}`);
         return false;
@@ -228,27 +226,12 @@ const MobileAttendance: React.FC<MobileAttendanceProps> = ({ currentUser }) => {
       console.error("Face ID Service Error Details:", err);
       const errorMessage = err.message || "Unknown error";
       
-      // Check if it's a network connectivity issue
-      if (!navigator.onLine) {
-        setScanError("No internet connection. Using offline verification.");
-        // Fallback to simple verification
-        return true;
-      } else if (errorMessage.includes("API_KEY") || errorMessage.includes("key") || errorMessage.includes("401")) {
-        console.warn("API key issue, using fallback verification");
-        setScanError(null);
-        return true; // Allow access with fallback
-      } else if (errorMessage.includes("429") || errorMessage.includes("quota")) {
-        setScanError("Service temporarily busy. Please wait 30 seconds and try again.");
-      } else if (errorMessage.includes("fetch") || errorMessage.includes("network") || errorMessage.includes("timeout")) {
-        console.warn("Network error, using fallback verification");
-        setScanError(null);
-        return true; // Allow access with fallback
-      } else if (errorMessage.includes("Invalid response format")) {
-        setScanError("Verification service error. Please try again.");
+      if (errorMessage.includes("API_KEY") || errorMessage.includes("key")) {
+        setScanError("Identity service: Invalid API Key. Contact admin.");
+      } else if (errorMessage.includes("429")) {
+        setScanError("Identity service is busy. Please wait 30 seconds.");
       } else {
-        console.warn("AI service unavailable, using fallback verification");
-        setScanError(null);
-        return true; // Allow access with fallback
+        setScanError("Identity service currently unavailable. Please check your internet connection and try again.");
       }
       return false;
     }
