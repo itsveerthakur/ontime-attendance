@@ -13,7 +13,7 @@ const MobileAttendance: React.FC<MobileAttendanceProps> = ({ currentUser }) => {
   const [time, setTime] = useState(new Date());
   const [isClockedIn, setIsClockedIn] = useState(false);
   const [locationStatus, setLocationStatus] = useState<'Checking' | 'Inside' | 'Outside' | 'Error' | 'Denied'>('Checking');
-  const [currentCoords, setCurrentCoords] = useState<{ lat: number; lng: number } | null>(null);
+  const [currentCoords, setCurrentCoords] = useState<{ lat: number; lng: number } | null>(0);
   const [currentAddress, setCurrentAddress] = useState<string | null>(null);
   const [isGeocoding, setIsGeocoding] = useState(false);
   const [officeCoords, setOfficeCoords] = useState<{ lat: number; lng: number; radius: number; name: string; address: string } | null>(null);
@@ -164,14 +164,8 @@ const MobileAttendance: React.FC<MobileAttendanceProps> = ({ currentUser }) => {
     }
 
     try {
-      const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
-      if (!apiKey) {
-        setScanError("Face verification not configured. Contact admin.");
-        return false;
-      }
-
-      const genAI = new GoogleGenAI(apiKey);
-      const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+      /* Always use const ai = new GoogleGenAI({apiKey: process.env.API_KEY}); as per guidelines */
+      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
       let profileBase64 = '';
       if (currentUser.photoUrl.startsWith('data:')) {
@@ -186,23 +180,44 @@ const MobileAttendance: React.FC<MobileAttendanceProps> = ({ currentUser }) => {
         });
       }
 
-      const result = await model.generateContent([
-        "Compare these faces and return JSON: {isMatch: boolean, reason: string}",
-        {
-          inlineData: {
-            mimeType: "image/jpeg",
-            data: profileBase64
-          }
-        },
-        {
-          inlineData: {
-            mimeType: "image/jpeg", 
-            data: capturedBase64
+      /* Use ai.models.generateContent and result.text as per guidelines. Use gemini-3-flash-preview as per model selection rules. */
+      const result = await ai.models.generateContent({
+        model: 'gemini-3-flash-preview',
+        contents: [{
+          parts: [
+            { text: "Identity Verification Task: Compare these two human faces and determine if they belong to the same person. Return JSON with 'isMatch' (boolean) and 'reason' (string)." },
+            {
+              inlineData: {
+                mimeType: "image/jpeg",
+                data: profileBase64
+              }
+            },
+            {
+              inlineData: {
+                mimeType: "image/jpeg", 
+                data: capturedBase64
+              }
+            }
+          ]
+        }],
+        config: {
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              isMatch: { type: Type.BOOLEAN },
+              reason: { type: Type.STRING }
+            },
+            required: ["isMatch", "reason"]
           }
         }
-      ]);
+      });
 
-      const response = JSON.parse(result.response.text());
+      /* Access text property directly. Do not use text() method. */
+      const text = result.text;
+      if (!text) throw new Error("Verification response was empty");
+
+      const response = JSON.parse(text);
       if (!response.isMatch) {
         setScanError(`Verification failed: ${response.reason}`);
         return false;
