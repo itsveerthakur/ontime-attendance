@@ -164,75 +164,53 @@ const MobileAttendance: React.FC<MobileAttendanceProps> = ({ currentUser }) => {
     }
 
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-      
+      const apiKey = process.env.NEXT_PUBLIC_GEMINI_API_KEY;
+      if (!apiKey || apiKey === 'PLACEHOLDER_API_KEY') {
+        setScanError("Face verification not configured. Contact admin.");
+        return false;
+      }
+
+      const genAI = new GoogleGenAI(apiKey);
+      const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+
       let profileBase64 = '';
       if (currentUser.photoUrl.startsWith('data:')) {
         profileBase64 = currentUser.photoUrl.split(',')[1];
       } else {
-        try {
-          const res = await fetch(currentUser.photoUrl);
-          if (!res.ok) throw new Error("Fetch failed");
-          const blob = await res.blob();
-          profileBase64 = await new Promise((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onloadend = () => {
-              const base64 = (reader.result as string).split(',')[1];
-              resolve(base64);
-            };
-            reader.onerror = reject;
-            reader.readAsDataURL(blob);
-          });
-        } catch (fetchError) {
-          console.error("Failed to load profile photo from URL:", fetchError);
-          setScanError("Could not access your profile photo. Please re-upload it.");
-          return false;
-        }
+        const res = await fetch(currentUser.photoUrl);
+        const blob = await res.blob();
+        profileBase64 = await new Promise((resolve) => {
+          const reader = new FileReader();
+          reader.onloadend = () => resolve((reader.result as string).split(',')[1]);
+          reader.readAsDataURL(blob);
+        });
       }
 
-      const response = await ai.models.generateContent({
-        model: 'gemini-3-flash-preview',
-        contents: [{
-          parts: [
-            { text: "Identity Verification: Compare these two human faces. Image 1 is the profile reference. Image 2 is a live capture. Determine if they are the exact same person. Be strict. Ignore differences in background, lighting, or clothing. focus on facial structure and features. Return JSON." },
-            { inlineData: { mimeType: 'image/jpeg', data: profileBase64 } },
-            { inlineData: { mimeType: 'image/jpeg', data: capturedBase64 } }
-          ]
-        }],
-        config: {
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: Type.OBJECT,
-            properties: {
-              isMatch: { type: Type.BOOLEAN },
-              confidence: { type: Type.NUMBER, description: "Confidence score between 0 and 1" },
-              reason: { type: Type.STRING }
-            },
-            required: ["isMatch"]
+      const result = await model.generateContent([
+        "Compare these faces and return JSON: {isMatch: boolean, reason: string}",
+        {
+          inlineData: {
+            mimeType: "image/jpeg",
+            data: profileBase64
+          }
+        },
+        {
+          inlineData: {
+            mimeType: "image/jpeg", 
+            data: capturedBase64
           }
         }
-      });
+      ]);
 
-      const resultText = response.text;
-      if (!resultText) throw new Error("Empty response from AI");
-
-      const result = JSON.parse(resultText);
-      if (!result.isMatch) {
-        setScanError(`Verification Failed: ${result.reason || 'Facial mismatch detected.'}`);
+      const response = JSON.parse(result.response.text());
+      if (!response.isMatch) {
+        setScanError(`Verification failed: ${response.reason}`);
         return false;
       }
       return true;
     } catch (err: any) {
-      console.error("Face ID Service Error Details:", err);
-      const errorMessage = err.message || "Unknown error";
-      
-      if (errorMessage.includes("API_KEY") || errorMessage.includes("key")) {
-        setScanError("Identity service: Invalid API Key. Contact admin.");
-      } else if (errorMessage.includes("429")) {
-        setScanError("Identity service is busy. Please wait 30 seconds.");
-      } else {
-        setScanError("Identity service currently unavailable. Please check your internet connection and try again.");
-      }
+      console.error("Face verification error:", err);
+      setScanError("Face verification failed. Check internet connection.");
       return false;
     }
   };
