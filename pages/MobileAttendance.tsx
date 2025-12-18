@@ -12,7 +12,7 @@ const MobileAttendance: React.FC<MobileAttendanceProps> = ({ currentUser }) => {
   const [isClockedIn, setIsClockedIn] = useState(false);
   const [locationStatus, setLocationStatus] = useState<'Checking' | 'Inside' | 'Outside' | 'Error' | 'Denied'>('Checking');
   const [currentCoords, setCurrentCoords] = useState<{ lat: number; lng: number } | null>(null);
-  const [officeCoords, setOfficeCoords] = useState<{ lat: number; lng: number; radius: number; name: string } | null>(null);
+  const [officeCoords, setOfficeCoords] = useState<{ lat: number; lng: number; radius: number; name: string; address: string } | null>(null);
   const [isScanning, setIsScanning] = useState(false);
   const [scanError, setScanError] = useState<string | null>(null);
   const [debugInfo, setDebugInfo] = useState<string>('');
@@ -35,9 +35,10 @@ const MobileAttendance: React.FC<MobileAttendanceProps> = ({ currentUser }) => {
     setDebugInfo(prev => prev + `\nFetching coords for: "${currentUser.location}"...`);
     
     // Using ilike and trim to handle potential whitespace or case mismatches in DB
+    // Added 'address' to the select query to fetch the full location address
     const { data, error } = await supabase
       .from('locations')
-      .select('latitude, longitude, radius, name')
+      .select('latitude, longitude, radius, name, address')
       .ilike('name', currentUser.location.trim())
       .maybeSingle();
 
@@ -54,7 +55,8 @@ const MobileAttendance: React.FC<MobileAttendanceProps> = ({ currentUser }) => {
         lat: Number(data.latitude),
         lng: Number(data.longitude),
         radius: Number(data.radius) || 100,
-        name: data.name
+        name: data.name,
+        address: data.address || data.name // Fallback to name if address is empty
       });
       setDebugInfo(prev => prev + `\nOffice Coords: ${data.latitude}, ${data.longitude} (R: ${data.radius}m)`);
     }
@@ -223,10 +225,10 @@ const MobileAttendance: React.FC<MobileAttendanceProps> = ({ currentUser }) => {
         <div className="mt-10 text-center animate-fadeIn">
           <p className="text-xs font-semibold text-slate-400 tracking-[0.2em] mb-2">{formattedDate}</p>
           <h1 className="text-6xl font-bold tracking-tight">{formattedTime}</h1>
-          <div className="flex items-center justify-center mt-3 text-slate-300">
-             <MapPinIcon className="w-3.5 h-3.5 mr-1.5 opacity-70" />
-             <span className="text-xs font-medium tracking-wide italic">
-                {officeCoords ? officeCoords.name : 'Fetching office details...'}
+          <div className="flex items-start justify-center mt-3 text-slate-300 px-4">
+             <MapPinIcon className="w-3.5 h-3.5 mr-1.5 opacity-70 mt-0.5 flex-shrink-0" />
+             <span className="text-[10px] sm:text-xs font-medium tracking-wide italic leading-snug">
+                {officeCoords ? officeCoords.address : 'Fetching office details...'}
              </span>
           </div>
         </div>
@@ -321,13 +323,6 @@ const MobileAttendance: React.FC<MobileAttendanceProps> = ({ currentUser }) => {
             </div>
           )}
         </div>
-
-        {/* Debug Info (Only visible in dev or if specific issues persist) */}
-        {locationStatus === 'Error' && (
-           <div className="bg-slate-900/5 p-2 rounded text-[9px] font-mono text-slate-400 overflow-hidden whitespace-pre">
-              {debugInfo}
-           </div>
-        )}
 
         {/* Activity Section */}
         <div className="pt-4 border-t border-slate-100">
