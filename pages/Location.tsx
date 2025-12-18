@@ -1,4 +1,3 @@
-
 import React, { useState, useRef, useEffect } from 'react';
 import type { Page } from '../App';
 import type { Location } from '../types';
@@ -94,22 +93,22 @@ const AddEditLocationView: React.FC<AddEditLocationViewProps> = ({ setActivePage
                         longitude: userLocation.lng
                     }));
                     
-                    // Reverse geocode to get address
+                    const geocoder = new window.google.maps.Geocoder();
                     geocoder.geocode({ location: userLocation }, (results: any, status: any) => {
                         if (status === 'OK' && results[0]) {
                             setFormData(prev => ({ ...prev, address: results[0].formatted_address }));
+                        } else if (status === "REQUEST_DENIED") {
+                            setMapError("Geocoding Service is not enabled for this API Key. Please enable 'Geocoding API' in Google Cloud Console.");
                         }
                     });
                 },
                 (error) => {
                     console.warn('Geolocation failed:', error);
-                    // Use a default location (you can change this to your preferred default)
                     initialCenter = { lat: 28.6139, lng: 77.2090 }; // New Delhi
                     map.setCenter(initialCenter);
                 }
             );
         } else {
-            // Geolocation not supported, use default location
             initialCenter = { lat: 28.6139, lng: 77.2090 }; // New Delhi
         }
 
@@ -152,6 +151,9 @@ const AddEditLocationView: React.FC<AddEditLocationViewProps> = ({ setActivePage
                     setFormData(prev => ({ ...prev, address: results[0].formatted_address }));
                 } else {
                     console.error('Geocoder failed due to: ' + status);
+                    if (status === 'REQUEST_DENIED') {
+                        setMapError("Geocoding service access denied. Please verify your API Key permissions.");
+                    }
                 }
             });
         };
@@ -169,61 +171,31 @@ const AddEditLocationView: React.FC<AddEditLocationViewProps> = ({ setActivePage
             updateFormFromLatLng(pos);
         });
         
-        if (addressInputRef.current && window.google.maps.places.PlaceAutocompleteElement) {
-            try {
-                const autocompleteElement = new window.google.maps.places.PlaceAutocompleteElement();
-                autocompleteElement.id = 'place-autocomplete';
-                
-                // Replace the input with the new element
-                const container = addressInputRef.current.parentElement;
-                if (container) {
-                    container.appendChild(autocompleteElement);
-                    addressInputRef.current.style.display = 'none';
-                    
-                    autocompleteElement.addEventListener('gmp-placeselect', (event: any) => {
-                        const place = event.place;
-                        if (place.location) {
-                            map.setCenter(place.location);
-                            map.setZoom(17);
-                            marker.setPosition(place.location);
-                            circle.setCenter(place.location);
-                            setFormData(prev => ({
-                                ...prev,
-                                address: place.formattedAddress || '',
-                                latitude: place.location.lat(),
-                                longitude: place.location.lng(),
-                            }));
-                        }
-                    });
+        if (addressInputRef.current) {
+            const autocomplete = new window.google.maps.places.Autocomplete(addressInputRef.current);
+            autocomplete.bindTo('bounds', map);
+            autocomplete.addListener('place_changed', () => {
+                const place = autocomplete.getPlace();
+                if (place.geometry && place.geometry.location) {
+                    map.setCenter(place.geometry.location);
+                    map.setZoom(17);
+                    marker.setPosition(place.geometry.location);
+                    circle.setCenter(place.geometry.location);
+                    setFormData(prev => ({
+                        ...prev,
+                        address: place.formatted_address || '',
+                        latitude: place.geometry.location.lat(),
+                        longitude: place.geometry.location.lng(),
+                    }));
                 }
-            } catch (error) {
-                console.warn('PlaceAutocompleteElement not available, falling back to legacy Autocomplete');
-                // Fallback to legacy Autocomplete if new element is not available
-                const autocomplete = new window.google.maps.places.Autocomplete(addressInputRef.current);
-                autocomplete.bindTo('bounds', map);
-                autocomplete.addListener('place_changed', () => {
-                    const place = autocomplete.getPlace();
-                    if (place.geometry && place.geometry.location) {
-                        map.setCenter(place.geometry.location);
-                        map.setZoom(17);
-                        marker.setPosition(place.geometry.location);
-                        circle.setCenter(place.geometry.location);
-                        setFormData(prev => ({
-                            ...prev,
-                            address: place.formatted_address || '',
-                            latitude: place.geometry.location.lat(),
-                            longitude: place.geometry.location.lng(),
-                        }));
-                    }
-                });
-            }
+            });
         }
     };
     
     useEffect(() => {
         if (step === 2) {
              let attempts = 0;
-            const maxAttempts = 15; // try for 3 seconds
+            const maxAttempts = 15;
             const interval = 200;
 
             const tryInitMap = () => {
@@ -237,7 +209,7 @@ const AddEditLocationView: React.FC<AddEditLocationViewProps> = ({ setActivePage
                         setTimeout(tryInitMap, interval);
                     } else {
                         setMapError(
-                            "This is often an API key configuration issue. Please check the following in your Google Cloud project:\n\n1. Billing is enabled.\n2. The website URL is an allowed referrer."
+                            "This is often an API key configuration issue. Please check the following in your Google Cloud project:\n\n1. Billing is enabled.\n2. The Geocoding API is enabled.\n3. The website URL is an allowed referrer."
                         );
                     }
                 }
