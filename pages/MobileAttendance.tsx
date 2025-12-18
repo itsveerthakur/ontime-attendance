@@ -164,7 +164,7 @@ const MobileAttendance: React.FC<MobileAttendanceProps> = ({ currentUser }) => {
     }
 
     try {
-      const apiKey = process.env.NEXT_PUBLIC_GEMINI_API_KEY;
+      const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
       if (!apiKey) {
         setScanError("Face verification not configured. Contact admin.");
         return false;

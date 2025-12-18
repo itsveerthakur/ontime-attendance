@@ -64,7 +64,7 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ currentUser, onUpdateUser }) 
   };
 
   const verifyAndSetPhoto = async (base64Str: string) => {
-    const apiKey = process.env.NEXT_PUBLIC_GEMINI_API_KEY;
+    const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
     console.log('API Key check:', apiKey ? 'Found' : 'Not found');
     if (!apiKey) {
       alert("Face verification not configured. Photo uploaded without verification.");
