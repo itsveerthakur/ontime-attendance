@@ -12,6 +12,7 @@ const MobileAttendance: React.FC<MobileAttendanceProps> = ({ currentUser }) => {
   const [isClockedIn, setIsClockedIn] = useState(false);
   const [locationStatus, setLocationStatus] = useState<'Checking' | 'Inside' | 'Outside' | 'Error' | 'Denied'>('Checking');
   const [currentCoords, setCurrentCoords] = useState<{ lat: number; lng: number } | null>(null);
+  const [currentAddress, setCurrentAddress] = useState<string | null>(null);
   const [officeCoords, setOfficeCoords] = useState<{ lat: number; lng: number; radius: number; name: string; address: string } | null>(null);
   const [isScanning, setIsScanning] = useState(false);
   const [scanError, setScanError] = useState<string | null>(null);
@@ -34,8 +35,6 @@ const MobileAttendance: React.FC<MobileAttendanceProps> = ({ currentUser }) => {
     
     setDebugInfo(prev => prev + `\nFetching coords for: "${currentUser.location}"...`);
     
-    // Using ilike and trim to handle potential whitespace or case mismatches in DB
-    // Added 'address' to the select query to fetch the full location address
     const { data, error } = await supabase
       .from('locations')
       .select('latitude, longitude, radius, name, address')
@@ -56,7 +55,7 @@ const MobileAttendance: React.FC<MobileAttendanceProps> = ({ currentUser }) => {
         lng: Number(data.longitude),
         radius: Number(data.radius) || 100,
         name: data.name,
-        address: data.address || data.name // Fallback to name if address is empty
+        address: data.address || data.name
       });
       setDebugInfo(prev => prev + `\nOffice Coords: ${data.latitude}, ${data.longitude} (R: ${data.radius}m)`);
     }
@@ -77,7 +76,7 @@ const MobileAttendance: React.FC<MobileAttendanceProps> = ({ currentUser }) => {
 
     const geoOptions = {
       enableHighAccuracy: true,
-      timeout: 15000, // Increased timeout
+      timeout: 15000,
       maximumAge: 0
     };
 
@@ -87,11 +86,6 @@ const MobileAttendance: React.FC<MobileAttendanceProps> = ({ currentUser }) => {
           lat: position.coords.latitude,
           lng: position.coords.longitude
         });
-        setDebugInfo(prev => {
-           const lines = prev.split('\n');
-           const lastLines = lines.length > 5 ? lines.slice(-5) : lines;
-           return lastLines.join('\n') + `\nGPS: ${position.coords.latitude.toFixed(5)}, ${position.coords.longitude.toFixed(5)}`;
-        });
       },
       (error) => {
         console.error("Geolocation error:", error);
@@ -100,13 +94,28 @@ const MobileAttendance: React.FC<MobileAttendanceProps> = ({ currentUser }) => {
         } else {
             setLocationStatus('Error');
         }
-        setDebugInfo(prev => prev + `\nGPS Error: ${error.message}`);
       },
       geoOptions
     );
 
     return () => navigator.geolocation.clearWatch(watchId);
   }, []);
+
+  // Reverse Geocoding for current physical location
+  useEffect(() => {
+    if (currentCoords && window.google && window.google.maps) {
+      const geocoder = new window.google.maps.Geocoder();
+      const latlng = { lat: currentCoords.lat, lng: currentCoords.lng };
+      
+      geocoder.geocode({ location: latlng }, (results: any, status: any) => {
+        if (status === "OK" && results[0]) {
+          setCurrentAddress(results[0].formatted_address);
+        } else {
+          console.error("Geocoder failed due to: " + status);
+        }
+      });
+    }
+  }, [currentCoords]);
 
   // Calculate Distance (Haversine Formula) and check Geofence
   useEffect(() => {
@@ -122,9 +131,8 @@ const MobileAttendance: React.FC<MobileAttendanceProps> = ({ currentUser }) => {
                 Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
       const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 
-      const distance = R * c; // in metres
+      const distance = R * c; 
       
-      // Add a 10-meter buffer for GPS drift
       const buffer = 15; 
       if (distance <= (officeCoords.radius + buffer)) {
         setLocationStatus('Inside');
@@ -136,6 +144,7 @@ const MobileAttendance: React.FC<MobileAttendanceProps> = ({ currentUser }) => {
 
   const handleRefresh = () => {
     setLocationStatus('Checking');
+    setCurrentAddress(null);
     fetchOfficeLocation();
   };
 
@@ -144,23 +153,17 @@ const MobileAttendance: React.FC<MobileAttendanceProps> = ({ currentUser }) => {
     setIsScanning(true);
 
     try {
-      // Access camera
       const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' } });
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
         videoRef.current.play();
       }
 
-      // Simulate face scan delay
       await new Promise(resolve => setTimeout(resolve, 2500));
-
-      // Stop camera
       stream.getTracks().forEach(track => track.stop());
       
-      // Update local state
       setIsClockedIn(!isClockedIn);
       setIsScanning(false);
-      
       alert(`Successfully ${!isClockedIn ? 'Clocked In' : 'Clocked Out'}!`);
 
     } catch (err: any) {
@@ -225,11 +228,24 @@ const MobileAttendance: React.FC<MobileAttendanceProps> = ({ currentUser }) => {
         <div className="mt-10 text-center animate-fadeIn">
           <p className="text-xs font-semibold text-slate-400 tracking-[0.2em] mb-2">{formattedDate}</p>
           <h1 className="text-6xl font-bold tracking-tight">{formattedTime}</h1>
-          <div className="flex items-start justify-center mt-3 text-slate-300 px-4">
-             <MapPinIcon className="w-3.5 h-3.5 mr-1.5 opacity-70 mt-0.5 flex-shrink-0" />
-             <span className="text-[10px] sm:text-xs font-medium tracking-wide italic leading-snug">
-                {officeCoords ? officeCoords.address : 'Fetching office details...'}
-             </span>
+          
+          {/* Current Address Display */}
+          <div className="flex items-start justify-center mt-4 text-slate-300 px-4 min-h-[40px]">
+             {currentAddress ? (
+               <>
+                 <MapPinIcon className="w-3.5 h-3.5 mr-2 opacity-70 mt-0.5 flex-shrink-0" />
+                 <span className="text-[10px] sm:text-xs font-medium tracking-wide italic leading-snug animate-fadeIn">
+                    {currentAddress}
+                 </span>
+               </>
+             ) : (
+               <div className="flex items-center space-x-2 text-slate-400">
+                  <LoaderIcon className="w-3.5 h-3.5 animate-spin" />
+                  <span className="text-[10px] sm:text-xs italic tracking-wide">
+                    Your current location fetching...
+                  </span>
+               </div>
+             )}
           </div>
         </div>
       </div>
@@ -275,7 +291,6 @@ const MobileAttendance: React.FC<MobileAttendanceProps> = ({ currentUser }) => {
         {/* Action Button */}
         <div className="flex flex-col items-center justify-center pt-4 pb-4">
           <div className="relative">
-            {/* Pulsing rings */}
             <div className={`absolute inset-0 rounded-full ${isClockedIn ? 'bg-red-500/20' : 'bg-green-500/20'} animate-ping`}></div>
             <div className={`absolute -inset-4 rounded-full ${isClockedIn ? 'bg-red-500/10' : 'bg-green-500/10'} animate-pulse`}></div>
             
@@ -308,7 +323,6 @@ const MobileAttendance: React.FC<MobileAttendanceProps> = ({ currentUser }) => {
             </button>
           </div>
 
-          {/* User Feedback for Geo-blocking */}
           {(locationStatus === 'Outside' || locationStatus === 'Error' || locationStatus === 'Denied') && (
               <div className="mt-6 px-4 py-2 bg-red-50 border border-red-200 rounded-lg text-red-700 text-xs text-center font-medium">
                   {locationStatus === 'Outside' && "You are outside the geofence. Move closer to the office to clock in/out."}
@@ -350,11 +364,8 @@ const MobileAttendance: React.FC<MobileAttendanceProps> = ({ currentUser }) => {
         </div>
       </div>
 
-      {/* Hidden Video for Camera Access */}
       <video ref={videoRef} className="hidden" playsInline muted />
       <canvas ref={canvasRef} className="hidden" />
-
-      {/* Device Navigation Simulation bar */}
       <div className="h-1 w-24 bg-slate-200 rounded-full mx-auto my-4 opacity-50"></div>
     </div>
   );
