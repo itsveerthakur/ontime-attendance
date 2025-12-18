@@ -3,6 +3,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import type { Employee } from '../types';
 import { MoneyIcon, AttendanceIcon, SupportIcon, UploadIcon, LoaderIcon, CameraIcon, XCircleIcon } from '../components/icons';
 import { supabase } from '../supabaseClient';
+import { GoogleGenAI } from '@google/genai';
 
 interface ProfilePageProps {
   currentUser: Employee | null;
@@ -62,6 +63,43 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ currentUser, onUpdateUser }) 
     fileInputRef.current?.click();
   };
 
+  const verifyAndSetPhoto = async (base64Str: string) => {
+    const apiKey = process.env.NEXT_PUBLIC_GEMINI_API_KEY;
+    if (!apiKey) {
+      alert("Face verification not configured. Photo uploaded without verification.");
+      return compressAndSetPhoto(base64Str);
+    }
+
+    try {
+      const genAI = new GoogleGenAI(apiKey);
+      const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+      
+      const base64Data = base64Str.split(',')[1];
+      const result = await model.generateContent([
+        "Analyze this image and return JSON: {hasFace: boolean, isHuman: boolean, reason: string}. Check if it contains a clear human face.",
+        {
+          inlineData: {
+            mimeType: "image/jpeg",
+            data: base64Data
+          }
+        }
+      ]);
+
+      const response = JSON.parse(result.response.text());
+      if (!response.hasFace || !response.isHuman) {
+        alert(`Photo verification failed: ${response.reason}. Please upload a clear photo of your face.`);
+        setIsUploading(false);
+        return;
+      }
+      
+      compressAndSetPhoto(base64Str);
+    } catch (err) {
+      console.error("Face verification error:", err);
+      alert("Face verification failed. Photo uploaded without verification.");
+      compressAndSetPhoto(base64Str);
+    }
+  };
+
   const compressAndSetPhoto = (base64Str: string) => {
     const img = new Image();
     img.src = base64Str;
@@ -89,10 +127,9 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ currentUser, onUpdateUser }) 
       const ctx = canvas.getContext('2d');
       ctx?.drawImage(img, 0, 0, width, height);
       
-      const compressedBase64 = canvas.toDataURL('image/jpeg', 0.7); // 70% quality compression
+      const compressedBase64 = canvas.toDataURL('image/jpeg', 0.7);
       
       try {
-        // 1. Update Supabase
         const { error } = await supabase
           .from('employees')
           .update({ photoUrl: compressedBase64 })
@@ -100,7 +137,6 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ currentUser, onUpdateUser }) 
 
         if (error) throw error;
 
-        // 2. Update local state
         const updatedUser = { ...currentUser, photoUrl: compressedBase64 };
         onUpdateUser(updatedUser);
         
@@ -125,7 +161,7 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ currentUser, onUpdateUser }) 
     setIsUploading(true);
     const reader = new FileReader();
     reader.onloadend = () => {
-      compressAndSetPhoto(reader.result as string);
+      verifyAndSetPhoto(reader.result as string);
     };
     reader.readAsDataURL(file);
   };
@@ -163,7 +199,7 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ currentUser, onUpdateUser }) 
       
       setIsCameraOpen(false);
       setIsUploading(true);
-      compressAndSetPhoto(photoData);
+      verifyAndSetPhoto(photoData);
     }
   };
 

@@ -165,7 +165,7 @@ const MobileAttendance: React.FC<MobileAttendanceProps> = ({ currentUser }) => {
 
     try {
       const apiKey = process.env.NEXT_PUBLIC_GEMINI_API_KEY;
-      if (!apiKey || apiKey === 'PLACEHOLDER_API_KEY') {
+      if (!apiKey) {
         setScanError("Face verification not configured. Contact admin.");
         return false;
       }
