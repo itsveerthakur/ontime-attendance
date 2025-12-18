@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../supabaseClient';
 import type { Employee } from '../types';
-import { ClockIcon, MapPinIcon, RefreshIcon, LoaderIcon, LockClosedIcon, FingerPrintIcon } from '../components/icons';
+import { ClockIcon, MapPinIcon, RefreshIcon, LoaderIcon, LockClosedIcon, FingerPrintIcon, XCircleIcon, CheckCircleIcon } from '../components/icons';
+import { GoogleGenAI, Type } from "@google/genai";
 
 interface MobileAttendanceProps {
   currentUser: Employee | null;
@@ -16,6 +17,7 @@ const MobileAttendance: React.FC<MobileAttendanceProps> = ({ currentUser }) => {
   const [isGeocoding, setIsGeocoding] = useState(false);
   const [officeCoords, setOfficeCoords] = useState<{ lat: number; lng: number; radius: number; name: string; address: string } | null>(null);
   const [isScanning, setIsScanning] = useState(false);
+  const [isVerifying, setIsVerifying] = useState(false);
   const [scanError, setScanError] = useState<string | null>(null);
   const [debugInfo, setDebugInfo] = useState<string>('');
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -118,12 +120,10 @@ const MobileAttendance: React.FC<MobileAttendanceProps> = ({ currentUser }) => {
           if (status === "REQUEST_DENIED") {
               setDebugInfo(prev => prev + "\nError: Geocoding API is not enabled in your GCP console for this key.");
           }
-          // FALLBACK: Use coordinates if geocoding fails so UI doesn't spin forever
           setCurrentAddress(`Location: ${currentCoords.lat.toFixed(4)}, ${currentCoords.lng.toFixed(4)} (Address service restricted)`);
         }
       });
     } else if (currentCoords && (!window.google || !window.google.maps)) {
-        // Handle case where Google Maps script didn't load
         setCurrentAddress(`Location: ${currentCoords.lat.toFixed(4)}, ${currentCoords.lng.toFixed(4)}`);
     }
   }, [currentCoords]);
@@ -159,7 +159,92 @@ const MobileAttendance: React.FC<MobileAttendanceProps> = ({ currentUser }) => {
     fetchOfficeLocation();
   };
 
+  const captureFrame = (): string | null => {
+    if (videoRef.current && canvasRef.current) {
+      const video = videoRef.current;
+      const canvas = canvasRef.current;
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        // Extract base64 part only
+        return canvas.toDataURL('image/jpeg', 0.8).split(',')[1];
+      }
+    }
+    return null;
+  };
+
+  const verifyFace = async (capturedBase64: string): Promise<boolean> => {
+    if (!currentUser?.photoUrl) {
+      setScanError("No profile photo found for authentication. Please update your profile.");
+      return false;
+    }
+
+    try {
+      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+      
+      // Handle profile photo which might be a data URL or a link
+      let profileBase64 = '';
+      if (currentUser.photoUrl.startsWith('data:')) {
+        profileBase64 = currentUser.photoUrl.split(',')[1];
+      } else {
+        // If it's a URL, we attempt to fetch it (assuming CORS is okay or handled via Supabase)
+        const response = await fetch(currentUser.photoUrl);
+        const blob = await response.blob();
+        const reader = new FileReader();
+        profileBase64 = await new Promise((resolve) => {
+          reader.onloadend = () => {
+            const res = reader.result as string;
+            resolve(res.split(',')[1]);
+          };
+          reader.readAsDataURL(blob);
+        });
+      }
+
+      const response = await ai.models.generateContent({
+        model: 'gemini-3-flash-preview',
+        contents: {
+          parts: [
+            { text: "Compare these two photos: 1. Profile Reference, 2. Live Scan. Determine if both images show the same individual for employee attendance verification. Be strict. Ignore background and lighting differences." },
+            { inlineData: { mimeType: 'image/jpeg', data: profileBase64 } },
+            { inlineData: { mimeType: 'image/jpeg', data: capturedBase64 } }
+          ]
+        },
+        config: {
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              isMatch: { type: Type.BOOLEAN, description: "True if the persons in both images match" },
+              confidence: { type: Type.NUMBER, description: "Confidence score from 0 to 1" },
+              reason: { type: Type.STRING, description: "Brief explanation of the decision" }
+            },
+            required: ["isMatch"]
+          }
+        }
+      });
+
+      const result = JSON.parse(response.text || '{}');
+      if (!result.isMatch) {
+        setScanError(`Face Authentication Failed: ${result.reason || 'Identity mismatch detected.'}`);
+        return false;
+      }
+      
+      return true;
+    } catch (err: any) {
+      console.error("Gemini AI Verification Error:", err);
+      setScanError("AI Verification Service Unavailable. Please try again.");
+      return false;
+    }
+  };
+
   const handleAction = async () => {
+    if (locationStatus !== 'Inside') {
+      alert("Unauthorized: You must be within the office geofence to mark attendance.");
+      return;
+    }
+
     setScanError(null);
     setIsScanning(true);
 
@@ -170,25 +255,40 @@ const MobileAttendance: React.FC<MobileAttendanceProps> = ({ currentUser }) => {
         videoRef.current.play();
       }
 
-      await new Promise(resolve => setTimeout(resolve, 2500));
+      // Simulate some capture delay for UX
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      
+      const capturedBase64 = captureFrame();
+      
+      // Stop camera immediately after capture
       stream.getTracks().forEach(track => track.stop());
       
-      setIsClockedIn(!isClockedIn);
+      if (!capturedBase64) {
+        throw new Error("Failed to capture image from camera.");
+      }
+
       setIsScanning(false);
-      alert(`Successfully ${!isClockedIn ? 'Clocked In' : 'Clocked Out'}!`);
+      setIsVerifying(true);
+
+      const isVerified = await verifyFace(capturedBase64);
+
+      if (isVerified) {
+        // Success Logic
+        setIsClockedIn(!isClockedIn);
+        alert(`Verification Successful! You have ${!isClockedIn ? 'Clocked In' : 'Clocked Out'}.`);
+      }
+      
+      setIsVerifying(false);
 
     } catch (err: any) {
-      console.error("Camera error:", err);
-      if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') {
-        setScanError("Camera hardware not found. Proceeding with manual verification...");
-        setTimeout(() => {
-          setIsClockedIn(!isClockedIn);
-          setIsScanning(false);
-          setScanError(null);
-        }, 2000);
+      console.error("Attendance Action Error:", err);
+      setIsScanning(false);
+      setIsVerifying(false);
+      
+      if (err.name === 'NotAllowedError') {
+        setScanError("Camera access denied. Please enable camera permissions in settings.");
       } else {
-        setScanError("Camera access denied. Please enable permissions.");
-        setIsScanning(false);
+        setScanError(err.message || "An unexpected error occurred during face scan.");
       }
     }
   };
@@ -307,17 +407,22 @@ const MobileAttendance: React.FC<MobileAttendanceProps> = ({ currentUser }) => {
             
             <button 
               onClick={handleAction}
-              disabled={isScanning || locationStatus === 'Checking' || locationStatus === 'Outside' || locationStatus === 'Error' || locationStatus === 'Denied'}
+              disabled={isScanning || isVerifying || locationStatus === 'Checking' || locationStatus === 'Outside' || locationStatus === 'Error' || locationStatus === 'Denied'}
               className={`relative z-10 w-48 h-48 rounded-full flex flex-col items-center justify-center text-white transition-all transform active:scale-95 shadow-2xl ${
                 isClockedIn 
                   ? 'bg-gradient-to-br from-red-500 to-red-700 shadow-red-500/50' 
                   : 'bg-gradient-to-br from-green-500 to-green-700 shadow-green-500/50'
-              } disabled:grayscale disabled:opacity-50`}
+              } disabled:grayscale disabled:opacity-50 overflow-hidden`}
             >
               {isScanning ? (
                 <div className="flex flex-col items-center">
                   <LoaderIcon className="w-12 h-12 animate-spin mb-2" />
-                  <span className="text-xs font-bold uppercase tracking-widest">Scanning...</span>
+                  <span className="text-xs font-bold uppercase tracking-widest">Capturing...</span>
+                </div>
+              ) : isVerifying ? (
+                <div className="flex flex-col items-center">
+                  <LoaderIcon className="w-12 h-12 animate-pulse mb-2" />
+                  <span className="text-xs font-bold uppercase tracking-widest">Verifying Identity...</span>
                 </div>
               ) : (
                 <>
@@ -327,25 +432,44 @@ const MobileAttendance: React.FC<MobileAttendanceProps> = ({ currentUser }) => {
                   </span>
                   <div className="flex items-center mt-2 bg-black/20 px-3 py-1 rounded-full space-x-1">
                     <FingerPrintIcon className="w-3 h-3" />
-                    <span className="text-[10px] font-bold">Face Scan</span>
+                    <span className="text-[10px] font-bold">Face Authenticate</span>
                   </div>
                 </>
+              )}
+
+              {/* Video Overlay for Scanning */}
+              {isScanning && (
+                <div className="absolute inset-0 z-20">
+                   <video ref={videoRef} className="w-full h-full object-cover" playsInline muted />
+                   <div className="absolute inset-0 border-4 border-primary/50 rounded-full animate-pulse pointer-events-none"></div>
+                </div>
               )}
             </button>
           </div>
 
           {(locationStatus === 'Outside' || locationStatus === 'Error' || locationStatus === 'Denied') && (
-              <div className="mt-6 px-4 py-2 bg-red-50 border border-red-200 rounded-lg text-red-700 text-xs text-center font-medium">
-                  {locationStatus === 'Outside' && "You are outside the geofence. Move closer to the office to clock in/out."}
-                  {locationStatus === 'Error' && "Location error. Ensure location is enabled and Refresh."}
-                  {locationStatus === 'Denied' && "Location access denied. Please enable it in browser settings."}
+              <div className="mt-6 px-4 py-2 bg-red-50 border border-red-200 rounded-lg text-red-700 text-xs text-center font-medium flex items-center gap-2">
+                  <XCircleIcon className="w-4 h-4 flex-shrink-0" />
+                  <span>
+                    {locationStatus === 'Outside' && "Geofence Error: Move closer to the office."}
+                    {locationStatus === 'Error' && "Location Service Error: Refresh or check GPS settings."}
+                    {locationStatus === 'Denied' && "Access Denied: Enable location permissions in browser."}
+                  </span>
               </div>
           )}
 
           {scanError && (
-            <div className="mt-4 px-4 py-2 bg-amber-50 border border-amber-200 rounded-lg text-amber-700 text-[10px] text-center">
+            <div className="mt-4 px-4 py-2 bg-red-50 border border-red-200 rounded-lg text-red-700 text-xs text-center font-bold flex flex-col items-center gap-1 shadow-sm">
+              <XCircleIcon className="w-5 h-5 text-red-500" />
               {scanError}
             </div>
+          )}
+
+          {isClockedIn && !isVerifying && !isScanning && !scanError && (
+             <div className="mt-4 flex items-center space-x-1 text-green-600 font-bold text-xs">
+                <CheckCircleIcon className="w-4 h-4" />
+                <span>Authenticated & Geofenced</span>
+             </div>
           )}
         </div>
 
@@ -356,26 +480,29 @@ const MobileAttendance: React.FC<MobileAttendanceProps> = ({ currentUser }) => {
                 <ClockIcon className="w-4 h-4 text-primary" />
                 <h3 className="font-bold text-slate-800 text-sm">Today's Activity</h3>
               </div>
-              <span className="text-[10px] font-bold text-slate-400 bg-slate-100 px-2 py-1 rounded-full">1 Entry</span>
+              <span className="text-[10px] font-bold text-slate-400 bg-slate-100 px-2 py-1 rounded-full">Recent Logs</span>
            </div>
            
            <div className="space-y-3">
-              <div className="flex items-center space-x-4 p-3 bg-slate-50 rounded-xl">
-                 <div className="w-1 h-8 bg-green-500 rounded-full"></div>
-                 <div className="flex-1">
-                    <p className="text-xs font-bold text-slate-800">Checked In</p>
-                    <p className="text-[10px] text-slate-500">Corporate Office • Geofenced</p>
-                 </div>
-                 <div className="text-right">
-                    <p className="text-xs font-black text-slate-800">12:36 PM</p>
-                    <p className="text-[10px] text-green-600 font-bold">On Time</p>
-                 </div>
-              </div>
+              {isClockedIn ? (
+                <div className="flex items-center space-x-4 p-3 bg-slate-50 rounded-xl animate-fadeIn">
+                   <div className="w-1 h-8 bg-green-500 rounded-full"></div>
+                   <div className="flex-1">
+                      <p className="text-xs font-bold text-slate-800">Checked In</p>
+                      <p className="text-[10px] text-slate-500">{officeCoords?.name || 'Corporate Office'} • AI Verified</p>
+                   </div>
+                   <div className="text-right">
+                      <p className="text-xs font-black text-slate-800">{time.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
+                      <p className="text-[10px] text-green-600 font-bold">On Time</p>
+                   </div>
+                </div>
+              ) : (
+                <p className="text-xs text-slate-400 italic text-center py-2">No activity recorded for today.</p>
+              )}
            </div>
         </div>
       </div>
 
-      <video ref={videoRef} className="hidden" playsInline muted />
       <canvas ref={canvasRef} className="hidden" />
       <div className="h-1 w-24 bg-slate-200 rounded-full mx-auto my-4 opacity-50"></div>
     </div>
