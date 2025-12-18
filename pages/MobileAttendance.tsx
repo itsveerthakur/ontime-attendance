@@ -144,13 +144,14 @@ const MobileAttendance: React.FC<MobileAttendanceProps> = ({ currentUser }) => {
     if (videoRef.current && canvasRef.current) {
       const video = videoRef.current;
       const canvas = canvasRef.current;
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
+      // Capture at a standard manageable resolution
+      canvas.width = 640;
+      canvas.height = 480;
       const ctx = canvas.getContext('2d');
       if (ctx) {
         ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-        // Using lower quality to ensure payload isn't too massive for the model
-        return canvas.toDataURL('image/jpeg', 0.6).split(',')[1];
+        // Using lower quality (0.5) to ensure payload is within reliable limits
+        return canvas.toDataURL('image/jpeg', 0.5).split(',')[1];
       }
     }
     return null;
@@ -158,12 +159,11 @@ const MobileAttendance: React.FC<MobileAttendanceProps> = ({ currentUser }) => {
 
   const verifyFace = async (capturedBase64: string): Promise<boolean> => {
     if (!currentUser?.photoUrl) {
-      setScanError("No profile photo found. Please update your profile photo first.");
+      setScanError("No profile photo found. Please upload a photo to your profile first.");
       return false;
     }
 
     try {
-      // Initialize API client
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
       
       let profileBase64 = '';
@@ -171,28 +171,30 @@ const MobileAttendance: React.FC<MobileAttendanceProps> = ({ currentUser }) => {
         profileBase64 = currentUser.photoUrl.split(',')[1];
       } else {
         try {
-          const response = await fetch(currentUser.photoUrl);
-          if (!response.ok) throw new Error("Could not fetch profile photo");
-          const blob = await response.blob();
+          const res = await fetch(currentUser.photoUrl);
+          if (!res.ok) throw new Error("Fetch failed");
+          const blob = await res.blob();
           profileBase64 = await new Promise((resolve, reject) => {
             const reader = new FileReader();
-            reader.onloadend = () => resolve((reader.result as string).split(',')[1]);
+            reader.onloadend = () => {
+              const base64 = (reader.result as string).split(',')[1];
+              resolve(base64);
+            };
             reader.onerror = reject;
             reader.readAsDataURL(blob);
           });
-        } catch (fetchErr) {
-          console.error("Profile photo fetch error:", fetchErr);
-          setScanError("Unable to access profile photo. Please re-upload it.");
+        } catch (fetchError) {
+          console.error("Failed to load profile photo from URL:", fetchError);
+          setScanError("Could not access your profile photo. Please re-upload it.");
           return false;
         }
       }
 
-      // Perform AI verification with strictly formatted multimodal input
       const response = await ai.models.generateContent({
         model: 'gemini-3-flash-preview',
         contents: [{
           parts: [
-            { text: "Identity Verification Task: Compare these two images. Image 1 is the profile photo. Image 2 is a live capture. Are they the same person? Be precise. Return JSON with 'isMatch' (boolean) and 'reason' (string)." },
+            { text: "Identity Verification: Compare these two human faces. Image 1 is the profile reference. Image 2 is a live capture. Determine if they are the exact same person. Be strict. Ignore differences in background, lighting, or clothing. focus on facial structure and features. Return JSON." },
             { inlineData: { mimeType: 'image/jpeg', data: profileBase64 } },
             { inlineData: { mimeType: 'image/jpeg', data: capturedBase64 } }
           ]
@@ -203,6 +205,7 @@ const MobileAttendance: React.FC<MobileAttendanceProps> = ({ currentUser }) => {
             type: Type.OBJECT,
             properties: {
               isMatch: { type: Type.BOOLEAN },
+              confidence: { type: Type.NUMBER, description: "Confidence score between 0 and 1" },
               reason: { type: Type.STRING }
             },
             required: ["isMatch"]
@@ -210,23 +213,25 @@ const MobileAttendance: React.FC<MobileAttendanceProps> = ({ currentUser }) => {
         }
       });
 
-      const output = response.text;
-      if (!output) throw new Error("Empty AI response");
+      const resultText = response.text;
+      if (!resultText) throw new Error("Empty response from AI");
 
-      const result = JSON.parse(output);
+      const result = JSON.parse(resultText);
       if (!result.isMatch) {
-        setScanError(`Verification Failed: ${result.reason || 'Person does not match profile'}`);
+        setScanError(`Verification Failed: ${result.reason || 'Facial mismatch detected.'}`);
         return false;
       }
       return true;
     } catch (err: any) {
-      console.error("Gemini AI Face Verification Error:", err);
-      // provide more detail in error message if possible
-      const msg = err.message || "";
-      if (msg.includes("API_KEY") || msg.includes("API key")) {
-        setScanError("Identity service: Invalid API configuration.");
+      console.error("Face ID Service Error Details:", err);
+      const errorMessage = err.message || "Unknown error";
+      
+      if (errorMessage.includes("API_KEY") || errorMessage.includes("key")) {
+        setScanError("Identity service: Invalid API Key. Contact admin.");
+      } else if (errorMessage.includes("429")) {
+        setScanError("Identity service is busy. Please wait 30 seconds.");
       } else {
-        setScanError("Identity service currently unavailable. Try again.");
+        setScanError("Identity service currently unavailable. Please check your internet connection and try again.");
       }
       return false;
     }
@@ -234,7 +239,7 @@ const MobileAttendance: React.FC<MobileAttendanceProps> = ({ currentUser }) => {
 
   const handleAction = async () => {
     if (locationStatus !== 'Inside') {
-      alert("Unauthorized: You must be inside the office geofence.");
+      alert("Unauthorized: You are outside the office geofence.");
       return;
     }
 
@@ -243,7 +248,7 @@ const MobileAttendance: React.FC<MobileAttendanceProps> = ({ currentUser }) => {
 
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ 
-        video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } } 
+        video: { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 720 } } 
       });
       
       if (videoRef.current) {
@@ -251,14 +256,15 @@ const MobileAttendance: React.FC<MobileAttendanceProps> = ({ currentUser }) => {
         videoRef.current.play();
       }
 
-      // Give user time to align face
+      // Small delay to let user position face
       await new Promise(resolve => setTimeout(resolve, 2000));
+      
       const capturedBase64 = captureFrame();
       
-      // Close camera immediately after capture
+      // Stop camera immediately
       stream.getTracks().forEach(track => track.stop());
       
-      if (!capturedBase64) throw new Error("Capture failed");
+      if (!capturedBase64) throw new Error("Failed to capture photo from camera.");
 
       setIsScanning(false);
       setIsVerifying(true);
@@ -267,15 +273,15 @@ const MobileAttendance: React.FC<MobileAttendanceProps> = ({ currentUser }) => {
 
       if (isVerified) {
         setIsClockedIn(!isClockedIn);
-        // Here you would typically also save to Supabase attendance logs
+        // Note: Success state could be logged to Supabase here
       }
       
       setIsVerifying(false);
     } catch (err: any) {
       setIsScanning(false);
       setIsVerifying(false);
-      console.error("Camera access/capture error:", err);
-      setScanError(err.message || "Failed to access camera.");
+      console.error("Capture process error:", err);
+      setScanError(err.message || "Face scanning failed.");
     }
   };
 
@@ -346,12 +352,17 @@ const MobileAttendance: React.FC<MobileAttendanceProps> = ({ currentUser }) => {
             ) : (
               <><LockClosedIcon className="w-10 h-10 mb-2 opacity-50" /><span className="text-2xl font-black uppercase tracking-tighter">{isClockedIn ? 'Clock Out' : 'Clock In'}</span><div className="flex items-center mt-2 bg-black/20 px-3 py-1 rounded-full space-x-1"><FingerPrintIcon className="w-3 h-3" /><span className="text-[10px] font-bold">Face ID</span></div></>
             )}
-            {isScanning && <div className="absolute inset-0 z-20"><video ref={videoRef} className="w-full h-full object-cover" playsInline muted /><div className="absolute inset-0 border-4 border-white/50 rounded-full animate-pulse pointer-events-none"></div></div>}
+            {isScanning && (
+              <div className="absolute inset-0 z-20">
+                <video ref={videoRef} className="w-full h-full object-cover" playsInline muted />
+                <div className="absolute inset-0 border-4 border-white/50 rounded-full animate-pulse pointer-events-none"></div>
+              </div>
+            )}
           </button>
 
           {locationStatus !== 'Inside' && locationStatus !== 'Checking' && (
             <div className="mt-4 px-4 py-2 bg-red-50 border border-red-200 rounded-lg text-red-700 text-xs font-bold flex items-center gap-2">
-              <XCircleIcon className="w-4 h-4" /> Move closer to Office
+              <XCircleIcon className="w-4 h-4" /> <span>Move inside Office Geofence</span>
             </div>
           )}
           {scanError && (
