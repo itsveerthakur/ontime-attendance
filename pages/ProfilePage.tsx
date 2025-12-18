@@ -1,7 +1,7 @@
 
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import type { Employee } from '../types';
-import { MoneyIcon, AttendanceIcon, SupportIcon, UploadIcon, LoaderIcon, UserCircleIcon } from '../components/icons';
+import { MoneyIcon, AttendanceIcon, SupportIcon, UploadIcon, LoaderIcon, CameraIcon, XCircleIcon } from '../components/icons';
 import { supabase } from '../supabaseClient';
 
 interface ProfilePageProps {
@@ -30,7 +30,22 @@ const SectionCard: React.FC<{ title: string; icon?: React.ReactNode; children: R
 
 const ProfilePage: React.FC<ProfilePageProps> = ({ currentUser, onUpdateUser }) => {
   const [isUploading, setIsUploading] = useState(false);
+  const [isChoiceModalOpen, setIsChoiceModalOpen] = useState(false);
+  const [isCameraOpen, setIsCameraOpen] = useState(false);
+  
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+
+  useEffect(() => {
+    // Cleanup camera stream when camera UI closes
+    return () => {
+      if (videoRef.current && videoRef.current.srcObject) {
+        const stream = videoRef.current.srcObject as MediaStream;
+        stream.getTracks().forEach(track => track.stop());
+      }
+    };
+  }, [isCameraOpen]);
 
   if (!currentUser) {
     return <div className="text-center py-10 text-slate-500">No user profile data available.</div>;
@@ -38,51 +53,117 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ currentUser, onUpdateUser }) 
 
   const initials = `${currentUser.firstName.charAt(0)}${currentUser.lastName.charAt(0)}`;
 
-  const handlePhotoClick = () => {
+  const handlePhotoAction = () => {
+    setIsChoiceModalOpen(true);
+  };
+
+  const handleUploadClick = () => {
+    setIsChoiceModalOpen(false);
     fileInputRef.current?.click();
+  };
+
+  const compressAndSetPhoto = (base64Str: string) => {
+    const img = new Image();
+    img.src = base64Str;
+    img.onload = async () => {
+      const canvas = document.createElement('canvas');
+      const MAX_WIDTH = 400;
+      const MAX_HEIGHT = 400;
+      let width = img.width;
+      let height = img.height;
+
+      if (width > height) {
+        if (width > MAX_WIDTH) {
+          height *= MAX_WIDTH / width;
+          width = MAX_WIDTH;
+        }
+      } else {
+        if (height > MAX_HEIGHT) {
+          width *= MAX_HEIGHT / height;
+          height = MAX_HEIGHT;
+        }
+      }
+
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      ctx?.drawImage(img, 0, 0, width, height);
+      
+      const compressedBase64 = canvas.toDataURL('image/jpeg', 0.7); // 70% quality compression
+      
+      try {
+        // 1. Update Supabase
+        const { error } = await supabase
+          .from('employees')
+          .update({ photoUrl: compressedBase64 })
+          .eq('employeeCode', currentUser.employeeCode);
+
+        if (error) throw error;
+
+        // 2. Update local state
+        const updatedUser = { ...currentUser, photoUrl: compressedBase64 };
+        onUpdateUser(updatedUser);
+        
+        setIsUploading(false);
+      } catch (err: any) {
+        console.error("Error updating profile photo:", err);
+        alert("Failed to update photo: " + (err.message || "Unknown error"));
+        setIsUploading(false);
+      }
+    };
   };
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    // Basic validation
     if (!file.type.startsWith('image/')) {
       alert('Please upload an image file.');
       return;
     }
 
-    if (file.size > 2 * 1024 * 1024) { // 2MB limit
-      alert('File size too large. Please upload an image smaller than 2MB.');
-      return;
-    }
-
     setIsUploading(true);
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      compressAndSetPhoto(reader.result as string);
+    };
+    reader.readAsDataURL(file);
+  };
 
+  const startCamera = async () => {
+    setIsChoiceModalOpen(false);
+    setIsCameraOpen(true);
     try {
-      const reader = new FileReader();
-      reader.onloadend = async () => {
-        const base64 = reader.result as string;
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' } });
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        videoRef.current.play();
+      }
+    } catch (err) {
+      console.error("Error accessing camera:", err);
+      alert("Could not access camera. Please check permissions.");
+      setIsCameraOpen(false);
+    }
+  };
 
-        // 1. Update Supabase
-        const { error } = await supabase
-          .from('employees')
-          .update({ photoUrl: base64 })
-          .eq('employeeCode', currentUser.employeeCode);
-
-        if (error) throw error;
-
-        // 2. Update local state
-        const updatedUser = { ...currentUser, photoUrl: base64 };
-        onUpdateUser(updatedUser);
-        
-        setIsUploading(false);
-      };
-      reader.readAsDataURL(file);
-    } catch (err: any) {
-      console.error("Error updating profile photo:", err);
-      alert("Failed to update photo: " + (err.message || "Unknown error"));
-      setIsUploading(false);
+  const capturePhoto = () => {
+    if (videoRef.current && canvasRef.current) {
+      const video = videoRef.current;
+      const canvas = canvasRef.current;
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      const ctx = canvas.getContext('2d');
+      ctx?.drawImage(video, 0, 0, canvas.width, canvas.height);
+      
+      const photoData = canvas.toDataURL('image/jpeg');
+      
+      // Stop camera
+      const stream = video.srcObject as MediaStream;
+      stream.getTracks().forEach(track => track.stop());
+      
+      setIsCameraOpen(false);
+      setIsUploading(true);
+      compressAndSetPhoto(photoData);
     }
   };
 
@@ -101,7 +182,7 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ currentUser, onUpdateUser }) 
       <div className="relative bg-gradient-to-r from-primary to-blue-600 h-48 rounded-2xl shadow-md overflow-hidden">
         <div className="absolute inset-0 bg-white/10 pattern-grid-lg opacity-30"></div>
         <div className="absolute bottom-0 left-0 w-full p-6 sm:p-8 flex flex-col sm:flex-row items-center sm:items-end space-y-4 sm:space-y-0 sm:space-x-6">
-          <div className="relative group cursor-pointer" onClick={handlePhotoClick}>
+          <div className="relative group cursor-pointer" onClick={handlePhotoAction}>
             {currentUser.photoUrl ? (
               <img 
                 src={currentUser.photoUrl} 
@@ -120,7 +201,7 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ currentUser, onUpdateUser }) 
                 <LoaderIcon className="w-8 h-8 text-white animate-spin" />
               ) : (
                 <div className="text-white flex flex-col items-center">
-                  <UploadIcon className="w-6 h-6" />
+                  <CameraIcon className="w-6 h-6" />
                   <span className="text-[10px] font-bold uppercase mt-1">Change</span>
                 </div>
               )}
@@ -137,11 +218,11 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ currentUser, onUpdateUser }) 
 
           <div className="pb-2">
              <button 
-                onClick={handlePhotoClick}
+                onClick={handlePhotoAction}
                 disabled={isUploading}
                 className="px-4 py-2 bg-white/10 hover:bg-white/20 backdrop-blur-sm border border-white/30 text-white text-xs font-bold rounded-lg flex items-center gap-2 transition-all"
              >
-                {isUploading ? <LoaderIcon className="w-3 h-3 animate-spin" /> : <UploadIcon className="w-3 h-3" />}
+                {isUploading ? <LoaderIcon className="w-3 h-3 animate-spin" /> : <CameraIcon className="w-3 h-3" />}
                 Change Photo
              </button>
           </div>
@@ -207,6 +288,77 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ currentUser, onUpdateUser }) 
         </div>
 
       </div>
+
+      {/* Choice Modal */}
+      {isChoiceModalOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fadeIn">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden">
+            <div className="p-6 border-b border-slate-100 flex justify-between items-center">
+              <h3 className="text-lg font-bold text-slate-800">Update Photo</h3>
+              <button onClick={() => setIsChoiceModalOpen(false)} className="text-slate-400 hover:text-slate-600">
+                <XCircleIcon className="w-6 h-6" />
+              </button>
+            </div>
+            <div className="p-6 grid grid-cols-2 gap-4">
+              <button 
+                onClick={handleUploadClick}
+                className="flex flex-col items-center justify-center p-6 bg-slate-50 border border-slate-200 rounded-xl hover:bg-slate-100 hover:border-primary transition-all group"
+              >
+                <div className="p-3 bg-white rounded-full shadow-sm mb-3 text-slate-400 group-hover:text-primary transition-colors">
+                  <UploadIcon className="w-8 h-8" />
+                </div>
+                <span className="text-sm font-bold text-slate-700">Upload Photo</span>
+              </button>
+              <button 
+                onClick={startCamera}
+                className="flex flex-col items-center justify-center p-6 bg-slate-50 border border-slate-200 rounded-xl hover:bg-slate-100 hover:border-primary transition-all group"
+              >
+                <div className="p-3 bg-white rounded-full shadow-sm mb-3 text-slate-400 group-hover:text-primary transition-colors">
+                  <CameraIcon className="w-8 h-8" />
+                </div>
+                <span className="text-sm font-bold text-slate-700">Click Photo</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Camera Modal */}
+      {isCameraOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fadeIn">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden flex flex-col">
+            <div className="p-4 border-b border-slate-100 flex justify-between items-center">
+              <h3 className="text-lg font-bold text-slate-800">Take a Photo</h3>
+              <button 
+                onClick={() => setIsCameraOpen(false)}
+                className="text-slate-400 hover:text-slate-600"
+              >
+                <XCircleIcon className="w-6 h-6" />
+              </button>
+            </div>
+            
+            <div className="relative aspect-square bg-slate-900 overflow-hidden">
+              <video 
+                ref={videoRef} 
+                className="w-full h-full object-cover scale-x-[-1]" 
+                playsInline 
+                muted 
+              />
+              <div className="absolute inset-0 border-2 border-white/20 rounded-full m-8 pointer-events-none"></div>
+            </div>
+
+            <div className="p-6 bg-slate-50 flex justify-center">
+              <button 
+                onClick={capturePhoto}
+                className="w-16 h-16 rounded-full bg-white border-4 border-primary flex items-center justify-center shadow-lg transform active:scale-95 transition-all"
+              >
+                <div className="w-10 h-10 rounded-full bg-primary"></div>
+              </button>
+            </div>
+            <canvas ref={canvasRef} className="hidden" />
+          </div>
+        </div>
+      )}
     </div>
   );
 };
