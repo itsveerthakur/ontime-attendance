@@ -63,22 +63,18 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ currentUser, onUpdateUser }) 
   };
 
   const verifyAndSetPhoto = async (base64Str: string) => {
-    const apiKey = process.env.API_KEY;
-    if (!apiKey) {
-      console.warn("API_KEY environment variable is not defined. Skipping verification.");
-      return compressAndSetPhoto(base64Str);
-    }
-
+    setIsUploading(true);
     try {
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-      const base64Data = base64Str.split(',')[1];
+      // Clean base64 string
+      const base64Data = base64Str.includes(',') ? base64Str.split(',')[1] : base64Str;
 
       const response = await ai.models.generateContent({
         model: 'gemini-3-flash-preview',
         contents: [{
           parts: [
-            { text: "Identity Setup Task: Analyze this image and determine if it contains a clear, identifiable human face suitable for biometric verification. Return JSON with 'hasFace' (boolean), 'isHuman' (boolean), and 'reason' (string)." },
-            { inlineData: { mimeType: 'image/jpeg', data: base64Data } }
+            { text: "Analyze the attached image. Is this a clear, centered, and identifiable photo of a human face suitable for biometric registration? Disregard the background. Respond only with JSON: { 'valid': boolean, 'reason': string }" },
+            { inlineData: { mimeType: 'image/jpeg', data: base64Data.trim() } }
           ]
         }],
         config: {
@@ -86,99 +82,81 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ currentUser, onUpdateUser }) 
           responseSchema: {
             type: Type.OBJECT,
             properties: {
-              hasFace: { type: Type.BOOLEAN },
-              isHuman: { type: Type.BOOLEAN },
+              valid: { type: Type.BOOLEAN },
               reason: { type: Type.STRING }
             },
-            required: ["hasFace", "isHuman"]
+            required: ["valid", "reason"]
           }
         }
       });
 
-      const resultText = response.text;
-      if (!resultText) throw new Error("Empty verification response");
+      const result = JSON.parse(response.text || '{"valid": false, "reason": "No response"}');
 
-      const verificationResult = JSON.parse(resultText);
-
-      if (!verificationResult.hasFace || !verificationResult.isHuman) {
-        alert(`Photo verification failed: ${verificationResult.reason || 'Image must contain a clear human face.'}`);
+      if (!result.valid) {
+        alert(`Face Registration Rejected: ${result.reason}`);
         setIsUploading(false);
         return;
       }
       
-      compressAndSetPhoto(base64Str);
-    } catch (err) {
-      console.error("Face verification logic error:", err);
-      // Fallback for demo purposes if AI is busy, but ideally we'd force compliance
-      alert("Face ID service briefly unavailable. Please ensure your photo is clear.");
-      compressAndSetPhoto(base64Str);
+      await compressAndSetPhoto(base64Str);
+    } catch (err: any) {
+      console.error("Setup Verification Error:", err);
+      // Fallback if AI service is blocked or down
+      const confirmSave = window.confirm("The AI face-validator is currently unavailable. Would you like to save this photo anyway? (Ensure your face is clearly visible)");
+      if (confirmSave) {
+        await compressAndSetPhoto(base64Str);
+      } else {
+        setIsUploading(false);
+      }
     }
   };
 
   const compressAndSetPhoto = (base64Str: string) => {
-    const img = new Image();
-    img.src = base64Str;
-    img.onload = async () => {
-      const canvas = document.createElement('canvas');
-      const MAX_WIDTH = 400;
-      const MAX_HEIGHT = 400;
-      let width = img.width;
-      let height = img.height;
-
-      if (width > height) {
-        if (width > MAX_WIDTH) {
-          height *= MAX_WIDTH / width;
-          width = MAX_WIDTH;
-        }
-      } else {
-        if (height > MAX_HEIGHT) {
-          width *= MAX_HEIGHT / height;
-          height = MAX_HEIGHT;
-        }
-      }
-
-      canvas.width = width;
-      canvas.height = height;
-      const ctx = canvas.getContext('2d');
-      ctx?.drawImage(img, 0, 0, width, height);
-      
-      const compressedBase64 = canvas.toDataURL('image/jpeg', 0.8);
-      
-      try {
-        const { error } = await supabase
-          .from('employees')
-          .update({ photoUrl: compressedBase64 })
-          .eq('employeeCode', currentUser.employeeCode);
-
-        if (error) throw error;
-
-        const updatedUser = { ...currentUser, photoUrl: compressedBase64 };
-        onUpdateUser(updatedUser);
+    return new Promise<void>((resolve) => {
+      const img = new Image();
+      img.src = base64Str;
+      img.onload = async () => {
+        const canvas = document.createElement('canvas');
+        const SIZE = 400; // Standard size for biometric reference
+        canvas.width = SIZE;
+        canvas.height = SIZE;
+        const ctx = canvas.getContext('2d');
         
-        setIsUploading(false);
-        alert("Profile photo updated successfully and verified with Face ID!");
-      } catch (err: any) {
-        console.error("Error updating profile photo in database:", err);
-        alert("Failed to update photo: " + (err.message || "Unknown database error"));
-        setIsUploading(false);
-      }
-    };
+        if (ctx) {
+          // Calculate centering
+          const scale = Math.max(SIZE / img.width, SIZE / img.height);
+          const x = (SIZE / 2) - (img.width / 2) * scale;
+          const y = (SIZE / 2) - (img.height / 2) * scale;
+          ctx.drawImage(img, x, y, img.width * scale, img.height * scale);
+          
+          const finalBase64 = canvas.toDataURL('image/jpeg', 0.85);
+          
+          try {
+            const { error } = await supabase
+              .from('employees')
+              .update({ photoUrl: finalBase64 })
+              .eq('employeeCode', currentUser.employeeCode);
+
+            if (error) throw error;
+
+            onUpdateUser({ ...currentUser, photoUrl: finalBase64 });
+            alert("Face ID registered successfully!");
+          } catch (err: any) {
+            alert("Database Error: " + err.message);
+          } finally {
+            setIsUploading(false);
+            resolve();
+          }
+        }
+      };
+    });
   };
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-
-    if (!file.type.startsWith('image/')) {
-      alert('Please select a valid image file.');
-      return;
-    }
-
-    setIsUploading(true);
     const reader = new FileReader();
-    reader.onloadend = () => {
-      verifyAndSetPhoto(reader.result as string);
-    };
+    reader.onloadend = () => verifyAndSetPhoto(reader.result as string);
     reader.readAsDataURL(file);
   };
 
@@ -191,11 +169,10 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ currentUser, onUpdateUser }) 
       });
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
-        videoRef.current.play();
+        await videoRef.current.play();
       }
     } catch (err) {
-      console.error("Error accessing camera:", err);
-      alert("Could not access camera. Please check browser permissions.");
+      alert("Camera access denied.");
       setIsCameraOpen(false);
     }
   };
@@ -204,83 +181,50 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ currentUser, onUpdateUser }) 
     if (videoRef.current && canvasRef.current) {
       const video = videoRef.current;
       const canvas = canvasRef.current;
-      // Capture 1:1 square aspect for profile photos
       const size = Math.min(video.videoWidth, video.videoHeight);
-      const startX = (video.videoWidth - size) / 2;
-      const startY = (video.videoHeight - size) / 2;
-
       canvas.width = 600;
       canvas.height = 600;
       const ctx = canvas.getContext('2d');
       if (ctx) {
-          ctx.drawImage(video, startX, startY, size, size, 0, 0, 600, 600);
-          const photoData = canvas.toDataURL('image/jpeg', 0.9);
-          
-          // Stop camera
+          ctx.drawImage(video, (video.videoWidth - size) / 2, (video.videoHeight - size) / 2, size, size, 0, 0, 600, 600);
+          const data = canvas.toDataURL('image/jpeg', 0.9);
           const stream = video.srcObject as MediaStream;
           stream.getTracks().forEach(track => track.stop());
-          
           setIsCameraOpen(false);
-          setIsUploading(true);
-          verifyAndSetPhoto(photoData);
+          verifyAndSetPhoto(data);
       }
     }
   };
 
   return (
     <div className="max-w-6xl mx-auto space-y-6">
-      <input 
-        type="file" 
-        ref={fileInputRef} 
-        onChange={handleFileChange} 
-        accept="image/*" 
-        className="hidden" 
-      />
+      <input type="file" ref={fileInputRef} onChange={handleFileChange} accept="image/*" className="hidden" />
 
       <div className="relative bg-gradient-to-r from-primary to-blue-600 h-48 rounded-2xl shadow-md overflow-hidden">
         <div className="absolute inset-0 bg-white/10 pattern-grid-lg opacity-30"></div>
         <div className="absolute bottom-0 left-0 w-full p-6 sm:p-8 flex flex-col sm:flex-row items-center sm:items-end space-y-4 sm:space-y-0 sm:space-x-6">
           <div className="relative group cursor-pointer" onClick={handlePhotoAction}>
             {currentUser.photoUrl ? (
-              <img 
-                src={currentUser.photoUrl} 
-                alt="Profile" 
-                className="w-28 h-28 sm:w-32 sm:h-32 rounded-full border-4 border-white shadow-lg object-cover bg-white transition-opacity group-hover:opacity-80"
-              />
+              <img src={currentUser.photoUrl} alt="Profile" className="w-28 h-28 sm:w-32 sm:h-32 rounded-full border-4 border-white shadow-lg object-cover bg-white" />
             ) : (
-              <div className="w-28 h-28 sm:w-32 sm:h-32 rounded-full border-4 border-white shadow-lg bg-white flex items-center justify-center text-4xl font-bold text-primary group-hover:bg-slate-50 transition-colors">
+              <div className="w-28 h-28 sm:w-32 sm:h-32 rounded-full border-4 border-white shadow-lg bg-white flex items-center justify-center text-4xl font-bold text-primary">
                 {initials}
               </div>
             )}
-            
             <div className="absolute inset-0 rounded-full bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
-              {isUploading ? (
-                <LoaderIcon className="w-8 h-8 text-white animate-spin" />
-              ) : (
-                <div className="text-white flex flex-col items-center">
-                  <CameraIcon className="w-6 h-6" />
-                  <span className="text-[10px] font-bold uppercase mt-1 text-center px-2">Update ID Photo</span>
-                </div>
-              )}
+              {isUploading ? <LoaderIcon className="w-8 h-8 text-white animate-spin" /> : <CameraIcon className="w-8 h-8 text-white" />}
             </div>
-
-            <div className={`absolute bottom-2 right-2 w-5 h-5 rounded-full border-2 border-white ${currentUser.status === 'Active' ? 'bg-green-500' : 'bg-red-500'}`} title={currentUser.status}></div>
+            <div className={`absolute bottom-2 right-2 w-5 h-5 rounded-full border-2 border-white ${currentUser.status === 'Active' ? 'bg-green-500' : 'bg-red-500'}`}></div>
           </div>
-          
           <div className="text-center sm:text-left text-white mb-2 flex-1">
             <h1 className="text-3xl font-bold">{currentUser.firstName} {currentUser.lastName}</h1>
             <p className="text-blue-100 font-medium mt-1">{currentUser.designation} &bull; {currentUser.department}</p>
             <p className="text-xs text-blue-200 mt-1 opacity-80">{currentUser.employeeCode}</p>
           </div>
-
           <div className="pb-2">
-             <button 
-                onClick={handlePhotoAction}
-                disabled={isUploading}
-                className="px-4 py-2 bg-white/10 hover:bg-white/20 backdrop-blur-sm border border-white/30 text-white text-xs font-bold rounded-lg flex items-center gap-2 transition-all"
-             >
+             <button onClick={handlePhotoAction} disabled={isUploading} className="px-4 py-2 bg-white/10 hover:bg-white/20 backdrop-blur-sm border border-white/30 text-white text-xs font-bold rounded-lg flex items-center gap-2 transition-all">
                 {isUploading ? <LoaderIcon className="w-3 h-3 animate-spin" /> : <CameraIcon className="w-3 h-3" />}
-                {isUploading ? 'Verifying...' : 'Change Photo'}
+                {isUploading ? 'Registering...' : 'Update Face ID'}
              </button>
           </div>
         </div>
@@ -294,15 +238,7 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ currentUser, onUpdateUser }) 
             <DetailRow label="Present Address" value={currentUser.presentAddress} />
             <DetailRow label="Permanent Address" value={currentUser.permanentAddress} />
           </SectionCard>
-
-          <SectionCard title="Bank Details" icon={<MoneyIcon className="w-5 h-5" />}>
-            <DetailRow label="Bank Name" value={currentUser.bankName} />
-            <DetailRow label="Account No" value={currentUser.accountNo} />
-            <DetailRow label="IFSC Code" value={currentUser.ifscCode} />
-            <DetailRow label="Payment Mode" value={currentUser.modeOfPayment} />
-          </SectionCard>
         </div>
-
         <div className="space-y-6">
           <SectionCard title="Personal Details" icon={<AttendanceIcon className="w-5 h-5" />}>
             <DetailRow label="Date of Birth" value={currentUser.dateOfBirth} />
@@ -310,19 +246,13 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ currentUser, onUpdateUser }) 
             <DetailRow label="Father's Name" value={currentUser.fatherName} />
             <DetailRow label="Mother's Name" value={currentUser.motherName} />
           </SectionCard>
-
           <SectionCard title="Official Info" icon={<SupportIcon className="w-5 h-5" />}>
             <DetailRow label="Employee Code" value={currentUser.employeeCode} />
             <DetailRow label="Date of Joining" value={currentUser.dateOfJoining} />
-            <DetailRow label="Work Premises" value={currentUser.workPremises} />
-            <DetailRow label="Sub Department" value={currentUser.subDepartment} />
             <DetailRow label="Location" value={currentUser.location} />
-            <DetailRow label="Sub Location" value={currentUser.subLocation} />
             <DetailRow label="Manager" value={currentUser.managerName} />
-            {currentUser.contractorName && <DetailRow label="Contractor" value={currentUser.contractorName} />}
           </SectionCard>
         </div>
-
         <div className="space-y-6">
            <SectionCard title="Statutory Info" icon={<MoneyIcon className="w-5 h-5" />}>
             <DetailRow label="UAN No" value={currentUser.uanNo} />
@@ -330,12 +260,11 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ currentUser, onUpdateUser }) 
             <DetailRow label="User Type" value={currentUser.userType} />
             <DetailRow label="Role" value={currentUser.userRole} />
           </SectionCard>
-
           <div className="bg-blue-50 rounded-xl p-6 border border-blue-100 text-center shadow-sm">
-             <h3 className="text-primary font-bold mb-2">Biometric Setup</h3>
-             <p className="text-sm text-slate-600 mb-4">Your profile photo is used as your Face ID for secure mobile attendance check-ins.</p>
+             <h3 className="text-primary font-bold mb-2">Face ID Enrollment</h3>
+             <p className="text-sm text-slate-600 mb-4">Your registered photo is used as your digital signature for clocking in via the mobile app.</p>
              <button onClick={handlePhotoAction} className="px-4 py-2 bg-primary text-white text-sm font-medium rounded-lg hover:bg-primary-dark transition-colors shadow-sm w-full">
-                Refresh ID Photo
+                Register New Photo
              </button>
           </div>
         </div>
@@ -345,29 +274,23 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ currentUser, onUpdateUser }) 
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fadeIn">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden">
             <div className="p-6 border-b border-slate-100 flex justify-between items-center">
-              <h3 className="text-lg font-bold text-slate-800">Update Face ID</h3>
+              <h3 className="text-lg font-bold text-slate-800">Enroll Face ID</h3>
               <button onClick={() => setIsChoiceModalOpen(false)} className="text-slate-400 hover:text-slate-600">
                 <XCircleIcon className="w-6 h-6" />
               </button>
             </div>
             <div className="p-6 grid grid-cols-2 gap-4">
-              <button 
-                onClick={handleUploadClick}
-                className="flex flex-col items-center justify-center p-6 bg-slate-50 border border-slate-200 rounded-xl hover:bg-slate-100 hover:border-primary transition-all group"
-              >
+              <button onClick={handleUploadClick} className="flex flex-col items-center justify-center p-6 bg-slate-50 border border-slate-200 rounded-xl hover:bg-slate-100 hover:border-primary transition-all group">
                 <div className="p-3 bg-white rounded-full shadow-sm mb-3 text-slate-400 group-hover:text-primary transition-colors">
                   <UploadIcon className="w-8 h-8" />
                 </div>
-                <span className="text-sm font-bold text-slate-700">Gallery</span>
+                <span className="text-sm font-bold text-slate-700">From File</span>
               </button>
-              <button 
-                onClick={startCamera}
-                className="flex flex-col items-center justify-center p-6 bg-slate-50 border border-slate-200 rounded-xl hover:bg-slate-100 hover:border-primary transition-all group"
-              >
+              <button onClick={startCamera} className="flex flex-col items-center justify-center p-6 bg-slate-50 border border-slate-200 rounded-xl hover:bg-slate-100 hover:border-primary transition-all group">
                 <div className="p-3 bg-white rounded-full shadow-sm mb-3 text-slate-400 group-hover:text-primary transition-colors">
                   <CameraIcon className="w-8 h-8" />
                 </div>
-                <span className="text-sm font-bold text-slate-700">Camera</span>
+                <span className="text-sm font-bold text-slate-700">Take Photo</span>
               </button>
             </div>
           </div>
@@ -378,33 +301,17 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ currentUser, onUpdateUser }) 
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fadeIn">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden flex flex-col">
             <div className="p-4 border-b border-slate-100 flex justify-between items-center">
-              <h3 className="text-lg font-bold text-slate-800">Capture ID Photo</h3>
-              <button 
-                onClick={() => setIsCameraOpen(false)}
-                className="text-slate-400 hover:text-slate-600"
-              >
+              <h3 className="text-lg font-bold text-slate-800">Camera Enrollment</h3>
+              <button onClick={() => setIsCameraOpen(false)} className="text-slate-400 hover:text-slate-600">
                 <XCircleIcon className="w-6 h-6" />
               </button>
             </div>
-            
             <div className="relative aspect-square bg-slate-900 overflow-hidden">
-              <video 
-                ref={videoRef} 
-                className="w-full h-full object-cover scale-x-[-1]" 
-                playsInline 
-                muted 
-              />
+              <video ref={videoRef} className="w-full h-full object-cover scale-x-[-1]" playsInline muted />
               <div className="absolute inset-0 border-2 border-white/20 rounded-full m-8 pointer-events-none"></div>
-              <div className="absolute inset-x-0 top-4 text-center">
-                  <span className="bg-black/50 text-white text-[10px] uppercase font-bold px-3 py-1 rounded-full">Center your face in the circle</span>
-              </div>
             </div>
-
             <div className="p-6 bg-slate-50 flex justify-center">
-              <button 
-                onClick={capturePhoto}
-                className="w-16 h-16 rounded-full bg-white border-4 border-primary flex items-center justify-center shadow-lg transform active:scale-95 transition-all"
-              >
+              <button onClick={capturePhoto} className="w-16 h-16 rounded-full bg-white border-4 border-primary flex items-center justify-center shadow-lg transform active:scale-95 transition-all">
                 <div className="w-10 h-10 rounded-full bg-primary"></div>
               </button>
             </div>
