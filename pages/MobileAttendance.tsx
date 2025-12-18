@@ -20,7 +20,6 @@ const MobileAttendance: React.FC<MobileAttendanceProps> = ({ currentUser }) => {
   const [isScanning, setIsScanning] = useState(false);
   const [isVerifying, setIsVerifying] = useState(false);
   const [scanError, setScanError] = useState<string | null>(null);
-  const [debugInfo, setDebugInfo] = useState<string>('');
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
@@ -150,7 +149,8 @@ const MobileAttendance: React.FC<MobileAttendanceProps> = ({ currentUser }) => {
       const ctx = canvas.getContext('2d');
       if (ctx) {
         ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-        return canvas.toDataURL('image/jpeg', 0.8).split(',')[1];
+        // Using lower quality to ensure payload isn't too massive for the model
+        return canvas.toDataURL('image/jpeg', 0.6).split(',')[1];
       }
     }
     return null;
@@ -158,36 +158,45 @@ const MobileAttendance: React.FC<MobileAttendanceProps> = ({ currentUser }) => {
 
   const verifyFace = async (capturedBase64: string): Promise<boolean> => {
     if (!currentUser?.photoUrl) {
-      setScanError("No profile photo found. Please update your profile.");
+      setScanError("No profile photo found. Please update your profile photo first.");
       return false;
     }
 
     try {
-      // Corrected initialization based on guidelines
+      // Initialize API client
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
       
       let profileBase64 = '';
       if (currentUser.photoUrl.startsWith('data:')) {
         profileBase64 = currentUser.photoUrl.split(',')[1];
       } else {
-        const response = await fetch(currentUser.photoUrl);
-        const blob = await response.blob();
-        profileBase64 = await new Promise((resolve) => {
-          const reader = new FileReader();
-          reader.onloadend = () => resolve((reader.result as string).split(',')[1]);
-          reader.readAsDataURL(blob);
-        });
+        try {
+          const response = await fetch(currentUser.photoUrl);
+          if (!response.ok) throw new Error("Could not fetch profile photo");
+          const blob = await response.blob();
+          profileBase64 = await new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onloadend = () => resolve((reader.result as string).split(',')[1]);
+            reader.onerror = reject;
+            reader.readAsDataURL(blob);
+          });
+        } catch (fetchErr) {
+          console.error("Profile photo fetch error:", fetchErr);
+          setScanError("Unable to access profile photo. Please re-upload it.");
+          return false;
+        }
       }
 
+      // Perform AI verification with strictly formatted multimodal input
       const response = await ai.models.generateContent({
         model: 'gemini-3-flash-preview',
-        contents: {
+        contents: [{
           parts: [
-            { text: "Strict Identity Verification: Do these two images show the exact same person? Compare features precisely. Ignore background." },
+            { text: "Identity Verification Task: Compare these two images. Image 1 is the profile photo. Image 2 is a live capture. Are they the same person? Be precise. Return JSON with 'isMatch' (boolean) and 'reason' (string)." },
             { inlineData: { mimeType: 'image/jpeg', data: profileBase64 } },
             { inlineData: { mimeType: 'image/jpeg', data: capturedBase64 } }
           ]
-        },
+        }],
         config: {
           responseMimeType: "application/json",
           responseSchema: {
@@ -201,22 +210,31 @@ const MobileAttendance: React.FC<MobileAttendanceProps> = ({ currentUser }) => {
         }
       });
 
-      const result = JSON.parse(response.text || '{"isMatch":false}');
+      const output = response.text;
+      if (!output) throw new Error("Empty AI response");
+
+      const result = JSON.parse(output);
       if (!result.isMatch) {
-        setScanError(`Auth Failed: ${result.reason || 'Mismatched identity'}`);
+        setScanError(`Verification Failed: ${result.reason || 'Person does not match profile'}`);
         return false;
       }
       return true;
     } catch (err: any) {
-      console.error("AI Error:", err);
-      setScanError("Identity service error. Try again.");
+      console.error("Gemini AI Face Verification Error:", err);
+      // provide more detail in error message if possible
+      const msg = err.message || "";
+      if (msg.includes("API_KEY") || msg.includes("API key")) {
+        setScanError("Identity service: Invalid API configuration.");
+      } else {
+        setScanError("Identity service currently unavailable. Try again.");
+      }
       return false;
     }
   };
 
   const handleAction = async () => {
     if (locationStatus !== 'Inside') {
-      alert("Unauthorized: Outside geofence.");
+      alert("Unauthorized: You must be inside the office geofence.");
       return;
     }
 
@@ -224,14 +242,20 @@ const MobileAttendance: React.FC<MobileAttendanceProps> = ({ currentUser }) => {
     setIsScanning(true);
 
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' } });
+      const stream = await navigator.mediaDevices.getUserMedia({ 
+        video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } } 
+      });
+      
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
         videoRef.current.play();
       }
 
-      await new Promise(resolve => setTimeout(resolve, 2500));
+      // Give user time to align face
+      await new Promise(resolve => setTimeout(resolve, 2000));
       const capturedBase64 = captureFrame();
+      
+      // Close camera immediately after capture
       stream.getTracks().forEach(track => track.stop());
       
       if (!capturedBase64) throw new Error("Capture failed");
@@ -243,14 +267,15 @@ const MobileAttendance: React.FC<MobileAttendanceProps> = ({ currentUser }) => {
 
       if (isVerified) {
         setIsClockedIn(!isClockedIn);
-        alert(`Success: ${!isClockedIn ? 'Clocked In' : 'Clocked Out'}`);
+        // Here you would typically also save to Supabase attendance logs
       }
       
       setIsVerifying(false);
     } catch (err: any) {
       setIsScanning(false);
       setIsVerifying(false);
-      setScanError(err.message || "Face scan failed.");
+      console.error("Camera access/capture error:", err);
+      setScanError(err.message || "Failed to access camera.");
     }
   };
 
@@ -314,12 +339,27 @@ const MobileAttendance: React.FC<MobileAttendanceProps> = ({ currentUser }) => {
             disabled={isScanning || isVerifying || locationStatus !== 'Inside'}
             className={`relative z-10 w-48 h-48 rounded-full flex flex-col items-center justify-center text-white transition-all transform active:scale-95 shadow-2xl ${isClockedIn ? 'bg-gradient-to-br from-red-500 to-red-700' : 'bg-gradient-to-br from-green-500 to-green-700'} disabled:grayscale disabled:opacity-50 overflow-hidden`}
           >
-            {isScanning ? <><LoaderIcon className="w-12 h-12 animate-spin mb-2" /><span className="text-xs font-bold uppercase tracking-widest">Scanning...</span></> : isVerifying ? <><LoaderIcon className="w-12 h-12 animate-pulse mb-2" /><span className="text-xs font-bold uppercase tracking-widest">Verifying...</span></> : <><LockClosedIcon className="w-10 h-10 mb-2 opacity-50" /><span className="text-2xl font-black uppercase tracking-tighter">{isClockedIn ? 'Clock Out' : 'Clock In'}</span><div className="flex items-center mt-2 bg-black/20 px-3 py-1 rounded-full space-x-1"><FingerPrintIcon className="w-3 h-3" /><span className="text-[10px] font-bold">Face ID</span></div></>}
+            {isScanning ? (
+              <><LoaderIcon className="w-12 h-12 animate-spin mb-2" /><span className="text-xs font-bold uppercase tracking-widest">Scanning...</span></>
+            ) : isVerifying ? (
+              <><LoaderIcon className="w-12 h-12 animate-pulse mb-2" /><span className="text-xs font-bold uppercase tracking-widest">Verifying...</span></>
+            ) : (
+              <><LockClosedIcon className="w-10 h-10 mb-2 opacity-50" /><span className="text-2xl font-black uppercase tracking-tighter">{isClockedIn ? 'Clock Out' : 'Clock In'}</span><div className="flex items-center mt-2 bg-black/20 px-3 py-1 rounded-full space-x-1"><FingerPrintIcon className="w-3 h-3" /><span className="text-[10px] font-bold">Face ID</span></div></>
+            )}
             {isScanning && <div className="absolute inset-0 z-20"><video ref={videoRef} className="w-full h-full object-cover" playsInline muted /><div className="absolute inset-0 border-4 border-white/50 rounded-full animate-pulse pointer-events-none"></div></div>}
           </button>
 
-          {locationStatus !== 'Inside' && locationStatus !== 'Checking' && <div className="mt-4 px-4 py-2 bg-red-50 border border-red-200 rounded-lg text-red-700 text-xs font-bold flex items-center gap-2"><XCircleIcon className="w-4 h-4" />Move closer to Office</div>}
-          {scanError && <div className="mt-4 px-4 py-2 bg-red-50 border border-red-200 rounded-lg text-red-700 text-xs font-bold flex flex-col items-center gap-1 shadow-sm"><XCircleIcon className="w-5 h-5 text-red-500" />{scanError}</div>}
+          {locationStatus !== 'Inside' && locationStatus !== 'Checking' && (
+            <div className="mt-4 px-4 py-2 bg-red-50 border border-red-200 rounded-lg text-red-700 text-xs font-bold flex items-center gap-2">
+              <XCircleIcon className="w-4 h-4" /> Move closer to Office
+            </div>
+          )}
+          {scanError && (
+            <div className="mt-4 px-4 py-2 bg-red-50 border border-red-200 rounded-lg text-red-700 text-xs font-bold flex flex-col items-center gap-1 shadow-sm text-center">
+              <XCircleIcon className="w-5 h-5 text-red-500" />
+              <span>{scanError}</span>
+            </div>
+          )}
         </div>
       </div>
       <canvas ref={canvasRef} className="hidden" />
