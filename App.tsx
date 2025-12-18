@@ -80,6 +80,11 @@ const App: React.FC = () => {
     localStorage.setItem('currentUser', JSON.stringify(user));
   };
 
+  const handleUpdateUser = (updatedUser: Employee) => {
+    setCurrentUser(updatedUser);
+    localStorage.setItem('currentUser', JSON.stringify(updatedUser));
+  };
+
   const handleLogout = () => {
     setCurrentUser(null);
     setIsAuthenticated(false);
@@ -130,7 +135,7 @@ const App: React.FC = () => {
       case 'Role Management':
         return <RoleManagement setActivePage={setActivePage} />;
       case 'Profile':
-        return <ProfilePage currentUser={currentUser} />;
+        return <ProfilePage currentUser={currentUser} onUpdateUser={handleUpdateUser} />;
       case 'Settings':
         return <SettingsPage />;
       case 'Mobile Attendance':
