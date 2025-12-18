@@ -223,6 +223,12 @@ const MobileAttendance: React.FC<MobileAttendanceProps> = ({ currentUser }) => {
         <div className="mt-10 text-center animate-fadeIn">
           <p className="text-xs font-semibold text-slate-400 tracking-[0.2em] mb-2">{formattedDate}</p>
           <h1 className="text-6xl font-bold tracking-tight">{formattedTime}</h1>
+          <div className="flex items-center justify-center mt-3 text-slate-300">
+             <MapPinIcon className="w-3.5 h-3.5 mr-1.5 opacity-70" />
+             <span className="text-xs font-medium tracking-wide italic">
+                {officeCoords ? officeCoords.name : 'Fetching office details...'}
+             </span>
+          </div>
         </div>
       </div>
 
