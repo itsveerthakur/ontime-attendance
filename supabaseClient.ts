@@ -6,8 +6,8 @@ const env = (import.meta as any).env || {};
 
 // To go live, you must set these environment variables in your deployment platform (Vercel, Netlify, etc.)
 // or create a .env file in your project root.
-const supabaseUrl = env.VITE_SUPABASE_URL || '';
-const supabaseAnonKey = env.VITE_SUPABASE_ANON_KEY || '';
+const supabaseUrl = env.VITE_SUPABASE_URL || 'https://zavdreffvcpamfflxrbh.supabase.co';
+const supabaseAnonKey = env.VITE_SUPABASE_ANON_KEY || 'sb_publishable_KQvk-8Juo49aWubGXnIizA_cSCjuGS8';
 
 // Check if credentials are still placeholders
 if (!env.VITE_SUPABASE_URL) {

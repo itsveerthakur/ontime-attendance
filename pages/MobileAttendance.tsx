@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../supabaseClient';
 import type { Employee } from '../types';
 import { ClockIcon, MapPinIcon, RefreshIcon, LoaderIcon, LockClosedIcon, FingerPrintIcon, XCircleIcon, CheckCircleIcon } from '../components/icons';
-import { GoogleGenerativeAI, SchemaType } from "@google/generative-ai";
+import { GoogleGenAI, Type } from "@google/genai";
 
 interface MobileAttendanceProps {
   currentUser: Employee | null;
@@ -182,7 +182,7 @@ const MobileAttendance: React.FC<MobileAttendanceProps> = ({ currentUser }) => {
     }
 
     try {
-      const genAI = new GoogleGenerativeAI(process.env.VITE_GOOGLE_AI_API_KEY || '');
+      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
       
       // Handle profile photo which might be a data URL or a link
       let profileBase64 = '';
@@ -202,29 +202,30 @@ const MobileAttendance: React.FC<MobileAttendanceProps> = ({ currentUser }) => {
         });
       }
 
-      const model = genAI.getGenerativeModel({ 
-        model: 'gemini-1.5-flash',
-        generationConfig: {
+      const response = await ai.models.generateContent({
+        model: 'gemini-3-flash-preview',
+        contents: {
+          parts: [
+            { text: "Compare these two photos: 1. Profile Reference, 2. Live Scan. Determine if both images show the same individual for employee attendance verification. Be strict. Ignore background and lighting differences." },
+            { inlineData: { mimeType: 'image/jpeg', data: profileBase64 } },
+            { inlineData: { mimeType: 'image/jpeg', data: capturedBase64 } }
+          ]
+        },
+        config: {
           responseMimeType: "application/json",
           responseSchema: {
-            type: SchemaType.OBJECT,
+            type: Type.OBJECT,
             properties: {
-              isMatch: { type: SchemaType.BOOLEAN, description: "True if the persons in both images match" },
-              confidence: { type: SchemaType.NUMBER, description: "Confidence score from 0 to 1" },
-              reason: { type: SchemaType.STRING, description: "Brief explanation of the decision" }
+              isMatch: { type: Type.BOOLEAN, description: "True if the persons in both images match" },
+              confidence: { type: Type.NUMBER, description: "Confidence score from 0 to 1" },
+              reason: { type: Type.STRING, description: "Brief explanation of the decision" }
             },
             required: ["isMatch"]
           }
         }
       });
 
-      const response = await model.generateContent([
-        "Compare these two photos: 1. Profile Reference, 2. Live Scan. Determine if both images show the same individual for employee attendance verification. Be strict. Ignore background and lighting differences.",
-        { inlineData: { mimeType: 'image/jpeg', data: profileBase64 } },
-        { inlineData: { mimeType: 'image/jpeg', data: capturedBase64 } }
-      ]);
-
-      const result = JSON.parse(response.response.text() || '{}');
+      const result = JSON.parse(response.text || '{}');
       if (!result.isMatch) {
         setScanError(`Face Authentication Failed: ${result.reason || 'Identity mismatch detected.'}`);
         return false;
