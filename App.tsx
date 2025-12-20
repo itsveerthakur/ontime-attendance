@@ -4,10 +4,10 @@ import MainLayout from './layouts/MainLayout';
 import LoginPage from './pages/LoginPage';
 import type { Employee } from './types';
 
-// Import all the pages
 import Dashboard from './pages/Dashboard';
 import MasterManagement from './pages/MasterManagement';
 import AttendanceManagement from './pages/AttendanceManagement';
+import AttendanceConditions from './pages/AttendanceConditions';
 import ShiftManagement from './pages/ShiftRotaManagement';
 import LeaveManagement from './pages/LeaveManagement';
 import Request from './pages/Request';
@@ -27,12 +27,16 @@ import RoleManagement from './pages/RoleManagement';
 import ProfilePage from './pages/ProfilePage';
 import SettingsPage from './pages/SettingsPage';
 import MobileAttendance from './pages/MobileAttendance';
+import WeeklyOffManagement from './pages/WeeklyOffManagement';
 
 export type Page = 
   | 'Dashboards' 
+  | 'Mobile Attendance'
   | 'Master Management' 
   | 'Attendance Management' 
+  | 'Attendance Conditions'
   | 'Shift Management' 
+  | 'Weekly OFF'
   | 'Leave Management' 
   | 'Request' 
   | 'Payroll'
@@ -50,8 +54,7 @@ export type Page =
   | 'Sub Location'
   | 'Role Management'
   | 'Profile'
-  | 'Settings'
-  | 'Mobile Attendance';
+  | 'Settings';
 
 const App: React.FC = () => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -59,7 +62,6 @@ const App: React.FC = () => {
   const [activePage, setActivePage] = useState<Page>('Dashboards');
   const [payrollKey, setPayrollKey] = useState(0);
 
-  // Check for persisted login on mount
   useEffect(() => {
     const savedUser = localStorage.getItem('currentUser');
     if (savedUser) {
@@ -89,19 +91,25 @@ const App: React.FC = () => {
     setCurrentUser(null);
     setIsAuthenticated(false);
     localStorage.removeItem('currentUser');
-    setActivePage('Dashboards'); // Reset to dashboard on logout
+    setActivePage('Dashboards');
   };
 
   const renderPage = () => {
     switch (activePage) {
       case 'Dashboards':
         return <Dashboard setActivePage={setActivePage} />;
+      case 'Mobile Attendance':
+        return <MobileAttendance currentUser={currentUser} />;
       case 'Master Management':
         return <MasterManagement setActivePage={setActivePage} />;
       case 'Attendance Management':
-        return <AttendanceManagement />;
+        return <AttendanceManagement setActivePage={setActivePage} />;
+      case 'Attendance Conditions':
+        return <AttendanceConditions setActivePage={setActivePage} />;
       case 'Shift Management':
         return <ShiftManagement />;
+      case 'Weekly OFF':
+        return <WeeklyOffManagement setActivePage={setActivePage} />;
       case 'Leave Management':
         return <LeaveManagement />;
       case 'Request':
@@ -138,8 +146,6 @@ const App: React.FC = () => {
         return <ProfilePage currentUser={currentUser} onUpdateUser={handleUpdateUser} />;
       case 'Settings':
         return <SettingsPage />;
-      case 'Mobile Attendance':
-        return <MobileAttendance currentUser={currentUser} />;
       default:
         return <Dashboard setActivePage={setActivePage} />;
     }

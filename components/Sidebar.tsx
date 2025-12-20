@@ -1,8 +1,9 @@
+
 import React from 'react';
 import {
   DashboardIcon, MasterMgmtIcon, AttendanceIcon, ShiftIcon,
   LeaveIcon, RequestIcon, PayrollIcon, ReportsIcon,
-  ComplianceIcon, SupportIcon, MobileIcon
+  ComplianceIcon, SupportIcon, MobileIcon, ClockIcon
 } from './icons';
 import type { Page } from '../App';
 
@@ -19,6 +20,7 @@ const menuItems: { name: Page; icon: React.ReactNode }[] = [
   { name: 'Master Management', icon: <MasterMgmtIcon className="w-6 h-6" /> },
   { name: 'Attendance Management', icon: <AttendanceIcon className="w-6 h-6" /> },
   { name: 'Shift Management', icon: <ShiftIcon className="w-6 h-6" /> },
+  { name: 'Weekly OFF', icon: <ClockIcon className="w-6 h-6" /> },
   { name: 'Leave Management', icon: <LeaveIcon className="w-6 h-6" /> },
   { name: 'Request', icon: <RequestIcon className="w-6 h-6" /> },
   { name: 'Payroll', icon: <PayrollIcon className="w-6 h-6" /> },

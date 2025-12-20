@@ -534,7 +534,8 @@ const Dashboard: React.FC<DashboardProps> = ({ setActivePage }) => {
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100">
-                                {Object.entries(stats.departments).map(([dept, counts]) => (
+                                {/* Fix: Explicitly type the arguments of map to resolve unknown property access errors */}
+                                {Object.entries(stats.departments).map(([dept, counts]: [string, any]) => (
                                     <tr key={dept} className="hover:bg-slate-50">
                                         <td className="px-6 py-3 font-medium text-slate-900">{dept}</td>
                                         <td className="px-6 py-3 text-center">{counts.total}</td>

@@ -1,4 +1,3 @@
-
 import React, { useState, useCallback, useEffect } from 'react';
 import { SearchIcon, FilterIcon, XCircleIcon, ChevronRightIcon, LockClosedIcon, LockOpenIcon, LoaderIcon, EyeIcon, ImportIcon } from '../../components/icons';
 import { supabase } from '../../supabaseClient';
@@ -70,8 +69,7 @@ const SalaryPrepare: React.FC<SalaryPrepareProps> = ({ onBack }) => {
 
             // 2. Fetch Attendance for Month
             const { data: attData, error: attError } = await supabase
-                .schema('payroll')
-                .from('attendance_entries')
+                .schema('payroll').from('attendance_entries')
                 .select('*')
                 .eq('month', selectedMonth)
                 .eq('year', selectedYear);
@@ -80,7 +78,8 @@ const SalaryPrepare: React.FC<SalaryPrepareProps> = ({ onBack }) => {
 
             const attMap: Record<string, AttendanceRecord> = {};
             attData?.forEach((r: any) => {
-                attMap[r.employee_code] = {
+                const code = String(r.employee_code);
+                attMap[code] = {
                     holiday: Number(r.holiday),
                     weekOff: Number(r.week_off),
                     present: Number(r.present),
@@ -106,9 +105,10 @@ const SalaryPrepare: React.FC<SalaryPrepareProps> = ({ onBack }) => {
 
             if (salaryData) {
                 salaryData.forEach((row: any) => {
-                    lockMap[row.employee_code] = row.status;
+                    const code = String(row.employee_code);
+                    lockMap[code] = row.status;
                     if (row.salary_data) {
-                        adjMap[row.employee_code] = {
+                        adjMap[code] = {
                             arrearAmount: Number(row.salary_data.manualArrears || row.salary_data.arrearAmount || 0),
                             otherDeduction: Number(row.salary_data.otherDeduction || 0),
                             tds: Number(row.salary_data.tds || 0),
@@ -127,9 +127,9 @@ const SalaryPrepare: React.FC<SalaryPrepareProps> = ({ onBack }) => {
             const activeLoansMap: Record<string, LoanData> = {};
             if (loansData) {
                 loansData.forEach((l: any) => {
-                    // Assuming one active loan per employee for simplicity, or prioritizing last one
-                    activeLoansMap[l.employee_code] = {
-                        employee_code: l.employee_code,
+                    const code = String(l.employee_code);
+                    activeLoansMap[code] = {
+                        employee_code: code,
                         total_amount: l.amount,
                         installment_amount: l.installment_amount || 0,
                         repayment_start_date: l.repayment_start_date || l.disbursement_date
@@ -139,30 +139,25 @@ const SalaryPrepare: React.FC<SalaryPrepareProps> = ({ onBack }) => {
             setActiveLoans(activeLoansMap);
 
             // 4b. Calculate Repaid Amount from ALL locked salary records
-            // Note: In a production app with years of data, this query should be optimized or aggregated.
             const { data: historyData } = await supabase
                 .schema('salarySheet')
                 .from('monthly_salary_table')
                 .select('employee_code, salary_data, month, year')
-                .eq('status', 'Locked'); // Only count locked salaries as repaid
+                .eq('status', 'Locked'); 
 
             const repaymentMap: Record<string, number> = {};
             if (historyData) {
                 const currentMonthIndex = MONTHS.indexOf(selectedMonth);
                 
                 historyData.forEach((row: any) => {
-                    // Filter out records strictly for the FUTURE relative to current selection?
-                    // Actually, usually we count all *previous* locked records.
-                    // If we are editing Nov 2025, we sum up everything from before Nov 2025.
-                    // And ignore current month's data from history because we are editing it.
-                    
+                    const code = String(row.employee_code);
                     const rowMonthIndex = MONTHS.indexOf(row.month);
                     const isPast = (row.year < selectedYear) || (row.year === selectedYear && rowMonthIndex < currentMonthIndex);
                     
                     if (isPast) {
                         const adv = Number(row.salary_data?.advance || 0);
                         if (adv > 0) {
-                            repaymentMap[row.employee_code] = (repaymentMap[row.employee_code] || 0) + adv;
+                            repaymentMap[code] = (repaymentMap[code] || 0) + adv;
                         }
                     }
                 });
@@ -173,21 +168,14 @@ const SalaryPrepare: React.FC<SalaryPrepareProps> = ({ onBack }) => {
             const currentMonthDate = new Date(selectedYear, MONTHS.indexOf(selectedMonth), 1);
             const balanceMap: Record<string, number> = {};
 
-            // Loop through active loans to determine auto-deduction and balances
             Object.keys(activeLoansMap).forEach(code => {
                 const loan = activeLoansMap[code];
                 const totalRepaid = repaymentMap[code] || 0;
                 const outstanding = Math.max(0, loan.total_amount - totalRepaid);
                 balanceMap[code] = outstanding;
 
-                // Auto-populate deduction ONLY if:
-                // 1. No existing saved adjustment for this month (i.e. new preparation)
-                // 2. Loan start date has passed or is this month
-                // 3. Outstanding balance exists
-                
                 if (!newAdjMap[code] && outstanding > 0) {
                     const loanStartDate = new Date(loan.repayment_start_date);
-                    // Compare only Month/Year
                     const isDue = (currentMonthDate.getFullYear() > loanStartDate.getFullYear()) || 
                                   (currentMonthDate.getFullYear() === loanStartDate.getFullYear() && currentMonthDate.getMonth() >= loanStartDate.getMonth());
                     
@@ -220,69 +208,66 @@ const SalaryPrepare: React.FC<SalaryPrepareProps> = ({ onBack }) => {
     }, [fetchAllData]);
 
     const handleAdjustmentChange = (code: string, field: keyof PayrollAdjustment, value: string) => {
-        if (lockedStatusMap[code] === 'Locked') return;
+        const empCode = String(code);
+        if (lockedStatusMap[empCode] === 'Locked') return;
         const val = parseFloat(value) || 0;
         setPayrollAdjustments(prev => ({
             ...prev,
-            [code]: {
-                ...(prev[code] || { arrearAmount: 0, otherDeduction: 0, tds: 0, advance: 0 }),
+            [empCode]: {
+                ...(prev[empCode] || { arrearAmount: 0, otherDeduction: 0, tds: 0, advance: 0 }),
                 [field]: val
             }
         }));
     };
 
+    /**
+     * Helper to calculate final payout values based on attendance and adjustments
+     */
     const calculateSalary = (emp: Employee) => {
-        const structure = salaryStructures.find(s => s.employee_code === emp.employeeCode);
-        const attendance = attendanceData[emp.employeeCode] || { totalPaidDays: 0, arrearDays: 0 };
-        const adjustment = payrollAdjustments[emp.employeeCode] || { arrearAmount: 0, otherDeduction: 0, tds: 0, advance: 0 };
+        const empCode = String(emp.employeeCode);
+        const structure = salaryStructures.find(s => s.employee_code === empCode);
+        // Fix: Use any casting for indexing state objects to ensure indexing works reliably across TS environments and bypass "unknown" index errors
+        const attendance = (attendanceData as any)[empCode] || { holiday: 0, weekOff: 0, present: 0, lwp: 0, leave: 0, arrearDays: 0, totalPaidDays: 0 };
+        const adjustment = (payrollAdjustments as any)[empCode] || { arrearAmount: 0, otherDeduction: 0, tds: 0, advance: 0 };
 
         if (!structure) return null;
 
         const daysInMonth = new Date(selectedYear, MONTHS.indexOf(selectedMonth) + 1, 0).getDate();
-        const paidDays = attendance.totalPaidDays;
-        const arrearDays = attendance.arrearDays || 0;
+        const paidDays = Number(attendance.totalPaidDays || 0);
+        const arrearDays = Number(attendance.arrearDays || 0);
         
-        // Proration Factor
         const factor = daysInMonth > 0 ? (paidDays / daysInMonth) : 0;
         
-        // 1. Earnings Calculation
         const earnedEarnings = structure.earnings_breakdown.map(e => {
             return { ...e, earned: Math.round(e.amount * factor) };
         });
 
         const totalEarnedGross = earnedEarnings.reduce((sum, e) => sum + e.earned, 0);
         
-        // 2. Deductions Calculation
         const earnedDeductions = structure.deductions_breakdown.map(d => {
             return { ...d, earned: Math.round(d.amount * factor) };
         });
         
         const totalEarnedDeductions = earnedDeductions.reduce((sum, d) => sum + d.earned, 0);
         
-        // 3. Employer Additional Calculation
         const earnedEmployerAdditional = (structure.employer_additional_breakdown || []).map(ea => {
              return { ...ea, earned: Math.round(ea.amount * factor) };
         });
         const totalEmployerContribution = earnedEmployerAdditional.reduce((sum, ea) => sum + ea.earned, 0);
 
-        // 4. Arrear Calculation (Automatic based on Arrear Days)
         const dailyGross = daysInMonth > 0 ? (structure.monthly_gross / daysInMonth) : 0;
         const calculatedArrears = Math.round(dailyGross * arrearDays);
         
-        // Total Arrears = Calculated from Days + Manual Adjustment
-        const manualArrears = adjustment.arrearAmount;
+        const manualArrears = Number(adjustment.arrearAmount || 0);
         const totalArrears = calculatedArrears + manualArrears;
 
-        // 5. Final Math
         const grossWithArrears = totalEarnedGross + totalArrears;
-        const totalAdjustments = adjustment.otherDeduction + adjustment.tds + adjustment.advance;
+        const totalAdjustments = Number(adjustment.otherDeduction || 0) + Number(adjustment.tds || 0) + Number(adjustment.advance || 0);
         const totalDeductionWithAdjustments = totalEarnedDeductions + totalAdjustments;
         const netInHand = grossWithArrears - totalDeductionWithAdjustments;
 
-        // CTC Calculation (Gross with Arrears + Employer Contributions)
         const earnedCTC = grossWithArrears + totalEmployerContribution;
 
-        // Extract key components for Summary View & Backward Compatibility
         const basicComp = earnedEarnings.find(e => e.name.toLowerCase().includes('basic'));
         const hraComp = earnedEarnings.find(e => e.name.toLowerCase().includes('hra'));
         const specialComp = earnedEarnings.find(e => e.name.toLowerCase().includes('special'));
@@ -291,14 +276,12 @@ const SalaryPrepare: React.FC<SalaryPrepareProps> = ({ onBack }) => {
         const esiComp = earnedDeductions.find(d => d.name.toLowerCase().includes('esi'));
 
         return {
-            // Summary / Flat fields
             basic: basicComp?.earned || 0,
             hra: hraComp?.earned || 0,
             special: specialComp?.earned || 0,
             epf: pfComp?.earned || 0,
             esic: esiComp?.earned || 0,
             
-            // Totals
             grossEarned: totalEarnedGross,
             totalDeduction: totalDeductionWithAdjustments,
             netInHand,
@@ -306,21 +289,17 @@ const SalaryPrepare: React.FC<SalaryPrepareProps> = ({ onBack }) => {
             earnedCTC,
             totalEmployerContribution,
             
-            // Arrears Details
             arrearDays,
             calculatedArrears,
             manualArrears,
-            arrearAmount: totalArrears, // For backward compatibility
+            arrearAmount: totalArrears, 
             
-            // Detailed Breakdown Arrays
             earningsBreakdown: earnedEarnings,
             deductionsBreakdown: earnedDeductions,
             employerAdditionalBreakdown: earnedEmployerAdditional,
             
-            // Adjustments
             ...adjustment,
             
-            // Metadata
             paidDays,
             daysInMonth,
             employeeName: `${emp.firstName} ${emp.lastName}`,
@@ -330,7 +309,6 @@ const SalaryPrepare: React.FC<SalaryPrepareProps> = ({ onBack }) => {
         };
     };
 
-    // Single Lock
     const handleLockSalary = async (empCode: string) => {
         setIsLocking(true);
         try {
@@ -371,7 +349,6 @@ const SalaryPrepare: React.FC<SalaryPrepareProps> = ({ onBack }) => {
         }
     };
     
-    // Single Unlock
     const handleUnlockSalary = async (empCode: string) => {
         if (!window.confirm("Are you sure? Unlocking allows editing but requires re-locking to finalize.")) return;
         setIsLocking(true);
@@ -394,7 +371,6 @@ const SalaryPrepare: React.FC<SalaryPrepareProps> = ({ onBack }) => {
         }
     };
 
-    // Bulk Actions
     const handleBulkLockAction = async (status: 'Locked' | 'Open') => {
         if (selectedEmployeeCodes.size === 0) return;
         if (status === 'Open' && !window.confirm("Are you sure you want to unlock selected salaries?")) return;
@@ -422,8 +398,6 @@ const SalaryPrepare: React.FC<SalaryPrepareProps> = ({ onBack }) => {
                             updated_at: new Date().toISOString()
                          });
                      }
-                } else {
-                    // For bulk unlock, we don't push updates, we do a bulk update query below
                 }
             }
 
@@ -444,13 +418,12 @@ const SalaryPrepare: React.FC<SalaryPrepareProps> = ({ onBack }) => {
                  if (error) throw error;
             }
 
-            // Update local state
             setLockedStatusMap(prev => {
                 const next = { ...prev };
                 codes.forEach(c => next[c] = status);
                 return next;
             });
-            setSelectedEmployeeCodes(new Set()); // Clear selection
+            setSelectedEmployeeCodes(new Set()); 
 
         } catch (e: any) {
             console.error("Error in bulk action:", e);
@@ -476,7 +449,6 @@ const SalaryPrepare: React.FC<SalaryPrepareProps> = ({ onBack }) => {
         e.employeeCode.toLowerCase().includes(searchTerm.toLowerCase())
     );
 
-    // Select All / Single
     const toggleSelectAll = (checked: boolean) => {
         if (checked) {
             setSelectedEmployeeCodes(new Set(filteredEmployees.map(e => e.employeeCode)));
@@ -491,8 +463,6 @@ const SalaryPrepare: React.FC<SalaryPrepareProps> = ({ onBack }) => {
         else newSet.add(code);
         setSelectedEmployeeCodes(newSet);
     };
-
-    // --- EXPORT & IMPORT FUNCTIONS ---
 
     const handleDownloadTemplate = () => {
         const template = [
@@ -537,7 +507,7 @@ const SalaryPrepare: React.FC<SalaryPrepareProps> = ({ onBack }) => {
                 });
                 
                 alert(`Adjustments imported for ${count} employees.`);
-                e.target.value = ''; // Reset input
+                e.target.value = ''; 
             } catch (err) {
                 console.error("Import Error:", err);
                 alert("Failed to import file.");
@@ -558,10 +528,7 @@ const SalaryPrepare: React.FC<SalaryPrepareProps> = ({ onBack }) => {
 
             if (!salary) return null;
             
-            // Create ordered row object according to specified column order
             const row: any = {};
-            
-            // Basic Info
             row['Employee Code'] = emp.employeeCode;
             row['Name'] = `${emp.firstName} ${emp.lastName}`;
             row['Department'] = emp.department;
@@ -569,57 +536,35 @@ const SalaryPrepare: React.FC<SalaryPrepareProps> = ({ onBack }) => {
             row['Bank Name'] = emp.bankName;
             row['Account No'] = emp.accountNo;
             row['IFSC Code'] = emp.ifscCode;
-            
-            // Attendance
             row['Days In Month'] = salary.daysInMonth;
             row['Paid Days'] = salary.paidDays;
             row['Arrear Days'] = salary.arrearDays;
-            
-            // Structure
             row['Monthly Structure Gross'] = structure ? structure.monthly_gross : 0;
-            
-            // Earnings breakdown
             row['Basic'] = salary.basic;
             row['HRA'] = salary.hra;
             
-            // Add other earnings components dynamically
             salary.earningsBreakdown.forEach((e: any) => {
                 if (!['Basic', 'HRA'].some(name => e.name.toLowerCase().includes(name.toLowerCase()))) {
                     row[e.name] = e.earned;
                 }
             });
             
-            // Arrears
             row['Arrears (Calc)'] = salary.calculatedArrears;
             row['Arrears (Manual)'] = salary.manualArrears;
             row['Total Arrears'] = salary.arrearAmount;
-            
-            // Totals
             row['Gross Earned'] = salary.grossEarned;
             row['Gross With Arrears'] = salary.grossWithArrears;
-
-            // Statutory deductions
             row['EPF'] = salary.epf;
             row['ESIC'] = salary.esic;
-                        
-            // Adjustments
             row['Other Deduction'] = salary.otherDeduction;
             row['TDS'] = salary.tds;
             row['Advance'] = salary.advance;
-            
-            // Final calculations
             row['Total Deductions'] = salary.totalDeduction;
             row['Net Pay'] = salary.netInHand;
-
-            // Employer contributions
-            row['Employer EPF'] = salary.epf; // Employer EPF = Employee EPF
-            row['Employer ESIC'] = salary.esic > 0 ? Math.round(salary.esic * 3.75 / 0.75) : 0; // Employer ESIC calculation
-
-            // Final CTC
+            row['Employer EPF'] = salary.epf; 
+            row['Employer ESIC'] = salary.esic > 0 ? Math.round(salary.esic * 3.75 / 0.75) : 0; 
             row['CTC'] = salary.earnedCTC;
-            row['Status'] = lockedStatusMap[emp.employeeCode] || 'Open';
-            
-            
+            row['Status'] = (lockedStatusMap as Record<string, string>)[emp.employeeCode] || 'Open';
             
             return row;
         }).filter(Boolean);
@@ -723,21 +668,22 @@ const SalaryPrepare: React.FC<SalaryPrepareProps> = ({ onBack }) => {
                                     <th className="px-4 py-3 border-b text-right text-red-600">Structure Ded.</th>
                                     <th className="px-4 py-3 border-b text-center w-24">Other Ded. (-)</th>
                                     <th className="px-4 py-3 border-b text-center w-24">TDS (-)</th>
-                                    <th className="px-4 py-3 border-b text-right font-bold text-green-700">Net Pay</th>
-                                    <th className="px-4 py-3 border-b text-right font-bold text-blue-800">CTC</th>
+                                    <th className="px-4 py-3 border-b text-right font-bold text-green-700 text-base">Net Pay</th>
+                                    <th className="px-4 py-3 border-b text-right font-bold text-blue-800 text-base">CTC</th>
                                     <th className="px-4 py-3 border-b text-center">Action</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100">
-                                {filteredEmployees.map(emp => {
-                                    const attendance = attendanceData[emp.employeeCode] || { totalPaidDays: 0, arrearDays: 0 };
-                                    const adj = payrollAdjustments[emp.employeeCode] || { arrearAmount: 0, otherDeduction: 0, tds: 0, advance: 0 };
-                                    const calculated = calculateSalary(emp);
-                                    const isLocked = lockedStatusMap[emp.employeeCode] === 'Locked';
+                                {filteredEmployees.map((emp: Employee) => {
+                                    // Fix: Using any casting to robustly index state objects and avoid "unknown" index errors in strict environments
+                                    const empKey: string = String(emp.employeeCode);
+                                    const attendance = (attendanceData as any)[empKey] || { totalPaidDays: 0, arrearDays: 0 };
+                                    const adj = (payrollAdjustments as any)[empKey] || { arrearAmount: 0, otherDeduction: 0, tds: 0, advance: 0 };
+                                    const calculated: any = calculateSalary(emp);
+                                    const isLocked = (lockedStatusMap as any)[empKey] === 'Locked';
                                     
-                                    // Calculate dynamic balance display
-                                    const originalOutstanding = loanBalances[emp.employeeCode] || 0;
-                                    const displayedBalance = Math.max(0, originalOutstanding - adj.advance);
+                                    const originalOutstanding = (loanBalances as any)[empKey] || 0;
+                                    const displayedBalance = Math.max(0, originalOutstanding - (adj.advance || 0));
 
                                     return (
                                         <tr key={emp.id} className={`hover:bg-slate-50 transition-colors ${isLocked ? 'bg-slate-50' : 'bg-white'}`}>
@@ -780,7 +726,7 @@ const SalaryPrepare: React.FC<SalaryPrepareProps> = ({ onBack }) => {
                                                 />
                                             </td>
                                             <td className="px-4 py-3 text-right text-red-600">
-                                                {calculated ? Math.round(calculated.grossWithArrears - calculated.netInHand - adj.otherDeduction - adj.tds - adj.advance) : '-'}
+                                                {calculated ? Math.round(calculated.grossWithArrears - calculated.netInHand - (adj.otherDeduction || 0) - (adj.tds || 0) - (adj.advance || 0)) : '-'}
                                             </td>
                                             <td className="px-2 py-2 text-center">
                                                 <input 
@@ -880,7 +826,6 @@ const SalaryPrepare: React.FC<SalaryPrepareProps> = ({ onBack }) => {
                             </div>
 
                             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                                {/* Earnings */}
                                 <div className="bg-slate-50/50 p-3 rounded border border-slate-100">
                                     <h4 className="font-bold text-slate-700 border-b pb-2 mb-3 flex items-center"><span className="w-2 h-2 bg-green-500 rounded-full mr-2"></span>Earnings</h4>
                                     <div className="space-y-2 text-sm">
@@ -890,7 +835,6 @@ const SalaryPrepare: React.FC<SalaryPrepareProps> = ({ onBack }) => {
                                                 <span className="font-medium">₹{item.earned}</span>
                                             </div>
                                         ))}
-                                        
                                         {viewSalaryData.calculatedArrears > 0 && (
                                             <div className="flex justify-between text-green-600 font-medium">
                                                 <span>Arrears ({viewSalaryData.arrearDays} Days)</span>
@@ -910,7 +854,6 @@ const SalaryPrepare: React.FC<SalaryPrepareProps> = ({ onBack }) => {
                                     </div>
                                 </div>
 
-                                {/* Deductions */}
                                 <div className="bg-slate-50/50 p-3 rounded border border-slate-100">
                                     <h4 className="font-bold text-slate-700 border-b pb-2 mb-3 flex items-center"><span className="w-2 h-2 bg-red-500 rounded-full mr-2"></span>Deductions</h4>
                                     <div className="space-y-2 text-sm">
@@ -945,7 +888,6 @@ const SalaryPrepare: React.FC<SalaryPrepareProps> = ({ onBack }) => {
                                     </div>
                                 </div>
 
-                                {/* Employer Contributions */}
                                 <div className="bg-slate-50/50 p-3 rounded border border-slate-100">
                                      <h4 className="font-bold text-slate-700 border-b pb-2 mb-3 flex items-center"><span className="w-2 h-2 bg-blue-500 rounded-full mr-2"></span>Employer Contrib.</h4>
                                      <div className="space-y-2 text-sm">

@@ -1,14 +1,13 @@
 
-
 import React from 'react';
-import { MasterMgmtIcon } from '../components/icons';
+import { MasterMgmtIcon, ClockIcon } from '../components/icons';
 import type { Page } from '../App';
 
 interface MasterManagementProps {
   setActivePage: (page: Page) => void;
 }
 
-const InfoCard: React.FC<{ title: string; onClick?: () => void }> = ({ title, onClick }) => (
+const InfoCard: React.FC<{ title: string; icon?: React.ReactNode; onClick?: () => void }> = ({ title, icon, onClick }) => (
     <div 
         onClick={onClick}
         className={`bg-white p-6 rounded-xl shadow-sm border border-slate-200 flex flex-col items-center justify-center text-center transition-all duration-300 group ${onClick ? 'cursor-pointer hover:shadow-lg hover:border-primary hover:-translate-y-1' : ''}`}
@@ -17,7 +16,7 @@ const InfoCard: React.FC<{ title: string; onClick?: () => void }> = ({ title, on
         onKeyDown={onClick ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick(); } } : undefined}
     >
         <div className="bg-primary/10 p-4 rounded-full mb-4 transition-colors group-hover:bg-primary">
-             <MasterMgmtIcon className="w-8 h-8 text-primary transition-colors group-hover:text-white" />
+             {icon || <MasterMgmtIcon className="w-8 h-8 text-primary transition-colors group-hover:text-white" />}
         </div>
         <h3 className="font-semibold text-slate-700 text-lg group-hover:text-primary">{title}</h3>
     </div>
@@ -32,6 +31,7 @@ const MasterManagement: React.FC<MasterManagementProps> = ({ setActivePage }) =>
       <div className="mt-8 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
         <InfoCard title="On-Roll Employees" onClick={() => setActivePage('On-Roll Employees')} />
         <InfoCard title="Contractual Employees" onClick={() => setActivePage('Contractual Employees')} />
+        <InfoCard title="Weekly OFF" icon={<ClockIcon className="w-8 h-8 text-primary transition-colors group-hover:text-white" />} onClick={() => setActivePage('Weekly OFF')} />
         <InfoCard title="Department" onClick={() => setActivePage('Department')} />
         <InfoCard title="Designation" onClick={() => setActivePage('Designation')} />
         <InfoCard title="Sub Department" onClick={() => setActivePage('Sub Department')} />

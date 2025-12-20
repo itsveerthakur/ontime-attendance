@@ -1,5 +1,6 @@
+
 import React, { useState, useEffect, useRef } from 'react';
-import { PlusIcon, ChevronRightIcon, XCircleIcon, DotsVerticalIcon, LoaderIcon, ImportIcon, CheckCircleIcon, TrashIcon } from '../components/icons';
+import { PlusIcon, ChevronRightIcon, XCircleIcon, DotsVerticalIcon, LoaderIcon, ImportIcon, CheckCircleIcon, TrashIcon, PencilIcon } from '../components/icons';
 import type { Shift } from '../types';
 import { supabase } from '../supabaseClient';
 
@@ -9,7 +10,7 @@ declare const XLSX: any;
 const InputField: React.FC<{ label: string; type?: string; placeholder?: string; required?: boolean; value: string | number; onChange: (e: React.ChangeEvent<HTMLInputElement>) => void; }> = ({ label, type = 'text', placeholder, required = false, value, onChange }) => (
     <div>
         <label className="block text-sm font-medium text-slate-600 mb-1.5">{label} {required && <span className="text-red-500">*</span>}</label>
-        <input type="text" onFocus={(e) => type === 'time' && (e.target.type = 'time')} onBlur={(e) => !e.target.value && (e.target.type = 'text')} placeholder={placeholder || label} required={required} value={value} onChange={onChange} className="w-full px-3 py-2 text-sm text-slate-700 bg-white border border-slate-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-primary-light focus:border-transparent" />
+        <input type={type === 'time' ? 'time' : type} placeholder={placeholder || label} required={required} value={value} onChange={onChange} className="w-full px-3 py-2 text-sm text-slate-700 bg-white border border-slate-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-primary-light focus:border-transparent" />
     </div>
 );
 
@@ -22,13 +23,14 @@ const SelectField: React.FC<{ label: string; children: React.ReactNode; required
     </div>
 );
 
-interface AddShiftFormProps {
+interface ShiftFormProps {
   isOpen: boolean;
   onClose: () => void;
-  onAddShift: (newShift: Omit<Shift, 'id' | 'isNightShift' | 'employeeCount' | 'createdAt'>) => void;
+  onSaveShift: (shiftData: Omit<Shift, 'id' | 'isNightShift' | 'employeeCount' | 'createdAt'>) => void;
+  editingShift: Shift | null;
 }
 
-const AddShiftForm: React.FC<AddShiftFormProps> = ({ isOpen, onClose, onAddShift }) => {
+const ShiftForm: React.FC<ShiftFormProps> = ({ isOpen, onClose, onSaveShift, editingShift }) => {
     const [shiftName, setShiftName] = useState('');
     const [status, setStatus] = useState<'active' | 'inactive'>('active');
     const [startTime, setStartTime] = useState('');
@@ -38,9 +40,33 @@ const AddShiftForm: React.FC<AddShiftFormProps> = ({ isOpen, onClose, onAddShift
     const [startReminder, setStartReminder] = useState(0);
     const [endReminder, setEndReminder] = useState(0);
     
+    useEffect(() => {
+        if (isOpen) {
+            if (editingShift) {
+                setShiftName(editingShift.name);
+                setStatus(editingShift.status);
+                setStartTime(editingShift.startTime);
+                setEndTime(editingShift.endTime);
+                setInGrace(editingShift.inGracePeriod);
+                setOutGrace(editingShift.outGracePeriod);
+                setStartReminder(editingShift.startReminder);
+                setEndReminder(editingShift.endReminder);
+            } else {
+                setShiftName('');
+                setStatus('active');
+                setStartTime('');
+                setEndTime('');
+                setInGrace(0);
+                setOutGrace(0);
+                setStartReminder(0);
+                setEndReminder(0);
+            }
+        }
+    }, [isOpen, editingShift]);
+
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
-        onAddShift({ 
+        onSaveShift({ 
             name: shiftName, 
             status, 
             startTime: startTime, 
@@ -50,15 +76,6 @@ const AddShiftForm: React.FC<AddShiftFormProps> = ({ isOpen, onClose, onAddShift
             startReminder: startReminder,
             endReminder: endReminder,
         });
-        // Reset form
-        setShiftName('');
-        setStatus('active');
-        setStartTime('');
-        setEndTime('');
-        setInGrace(0);
-        setOutGrace(0);
-        setStartReminder(0);
-        setEndReminder(0);
         onClose();
     };
 
@@ -69,7 +86,7 @@ const AddShiftForm: React.FC<AddShiftFormProps> = ({ isOpen, onClose, onAddShift
         <div className={`fixed top-0 right-0 h-full w-full max-w-lg bg-white shadow-2xl z-30 transform transition-transform duration-300 ease-in-out ${isOpen ? 'translate-x-0' : 'translate-x-full'}`}>
             <form onSubmit={handleSubmit} className="flex flex-col h-full">
                 <div className="flex justify-between items-center p-5 border-b border-slate-200">
-                    <h2 className="text-xl font-bold text-slate-800">Add New Shift</h2>
+                    <h2 className="text-xl font-bold text-slate-800">{editingShift ? 'Edit Shift' : 'Add New Shift'}</h2>
                     <button type="button" onClick={onClose} className="p-1 rounded-full text-slate-500 hover:bg-slate-100">
                         <XCircleIcon className="w-8 h-8" />
                     </button>
@@ -97,7 +114,7 @@ const AddShiftForm: React.FC<AddShiftFormProps> = ({ isOpen, onClose, onAddShift
                 
                 <div className="p-4 border-t border-slate-200 bg-slate-50 flex justify-end space-x-3">
                     <button type="button" onClick={onClose} className="px-5 py-2.5 text-sm font-semibold text-slate-700 bg-white border border-slate-300 rounded-lg shadow-sm hover:bg-slate-50">Cancel</button>
-                    <button type="submit" className="px-5 py-2.5 text-sm font-semibold text-white bg-primary rounded-lg shadow-sm hover:bg-primary-dark">Add New Shift</button>
+                    <button type="submit" className="px-5 py-2.5 text-sm font-semibold text-white bg-primary rounded-lg shadow-sm hover:bg-primary-dark">{editingShift ? 'Update Shift' : 'Add New Shift'}</button>
                 </div>
             </form>
         </div>
@@ -106,9 +123,10 @@ const AddShiftForm: React.FC<AddShiftFormProps> = ({ isOpen, onClose, onAddShift
 };
 
 const ShiftManagement: React.FC = () => {
-    const [isAddFormOpen, setIsAddFormOpen] = useState(false);
+    const [isFormOpen, setIsFormOpen] = useState(false);
     const [shifts, setShifts] = useState<Shift[]>([]);
     const [isLoading, setIsLoading] = useState(true);
+    const [editingShift, setEditingShift] = useState<Shift | null>(null);
     const [openActionMenuId, setOpenActionMenuId] = useState<number | null>(null);
     const actionMenuRef = useRef<HTMLDivElement>(null);
 
@@ -148,25 +166,38 @@ const ShiftManagement: React.FC = () => {
         fetchShifts();
     }, []);
 
-    const handleAddShift = async (newShiftData: Omit<Shift, 'id' | 'isNightShift' | 'employeeCount' | 'createdAt'>) => {
-        const exists = shifts.some(s => s.name.toLowerCase() === newShiftData.name.toLowerCase());
-        if (exists) {
-            alert("A shift with this name already exists.");
-            return;
+    const handleSaveShift = async (shiftData: Omit<Shift, 'id' | 'isNightShift' | 'employeeCount' | 'createdAt'>) => {
+        if (!editingShift) {
+            const exists = shifts.some(s => s.name.toLowerCase() === shiftData.name.toLowerCase());
+            if (exists) {
+                alert("A shift with this name already exists.");
+                return;
+            }
         }
 
-        const newShift = {
-            ...newShiftData,
-            isNightShift: false, // Default logic
-            employeeCount: 0,
-        };
-        
-        const { error } = await supabase.from('shifts').insert([newShift]);
-        if (error) {
-          console.error("Error adding shift:", error.message);
-          alert(`Error adding shift: ${error.message}`);
+        if (editingShift?.id) {
+            const { error } = await supabase.from('shifts').update(shiftData).eq('id', editingShift.id);
+            if (error) {
+                console.error("Error updating shift:", error.message);
+                alert(`Error updating shift: ${error.message}`);
+            } else {
+                fetchShifts(true);
+            }
+        } else {
+            const newShift = {
+                ...shiftData,
+                isNightShift: false, // Default logic
+                employeeCount: 0,
+            };
+            const { error } = await supabase.from('shifts').insert([newShift]);
+            if (error) {
+                console.error("Error adding shift:", error.message);
+                alert(`Error adding shift: ${error.message}`);
+            } else {
+                fetchShifts(true);
+            }
         }
-        else fetchShifts(true);
+        setEditingShift(null);
     };
 
     const handleDelete = async (id: number) => {
@@ -196,6 +227,12 @@ const ShiftManagement: React.FC = () => {
                 fetchShifts(true);
             }
         }
+    };
+
+    const handleEdit = (shift: Shift) => {
+        setEditingShift(shift);
+        setIsFormOpen(true);
+        setOpenActionMenuId(null);
     };
 
     const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -309,7 +346,7 @@ const ShiftManagement: React.FC = () => {
                                 <input type="file" accept=".xlsx,.xls" className="hidden" onChange={handleImport} />
                             </label>
                             <button 
-                                onClick={() => setIsAddFormOpen(true)}
+                                onClick={() => { setEditingShift(null); setIsFormOpen(true); }}
                                 className="flex items-center space-x-2 px-4 py-2 text-sm font-medium text-white bg-primary rounded-lg shadow-sm hover:bg-primary-dark">
                                 <PlusIcon className="w-5 h-5" />
                                 <span>Add New Shift</span>
@@ -366,8 +403,14 @@ const ShiftManagement: React.FC = () => {
                                             <DotsVerticalIcon className="w-5 h-5 text-slate-500" />
                                         </button>
                                         {openActionMenuId === shift.id && (
-                                            <div ref={actionMenuRef} className="absolute right-12 top-10 z-10 w-40 bg-white rounded-lg shadow-lg border border-slate-200">
+                                            <div ref={actionMenuRef} className="absolute right-12 top-10 z-10 w-40 bg-white rounded-lg shadow-lg border border-slate-200 animate-fadeIn">
                                                 <ul className="py-1 text-sm text-slate-700">
+                                                    <li>
+                                                        <a href="#" onClick={(e) => { e.preventDefault(); handleEdit(shift); }} className="flex items-center space-x-3 px-4 py-2 hover:bg-slate-100 cursor-pointer">
+                                                            <PencilIcon className="w-4 h-4 text-blue-500" />
+                                                            <span>Edit</span>
+                                                        </a>
+                                                    </li>
                                                     <li>
                                                         <a href="#" onClick={(e) => { e.preventDefault(); handleToggleStatus(shift); }} className="flex items-center space-x-3 px-4 py-2 hover:bg-slate-100 cursor-pointer">
                                                             {shift.status === 'active' ? <XCircleIcon className="w-4 h-4 text-red-500" /> : <CheckCircleIcon className="w-4 h-4 text-green-500" />}
@@ -389,7 +432,12 @@ const ShiftManagement: React.FC = () => {
                 </div>
             )}
 
-            <AddShiftForm isOpen={isAddFormOpen} onClose={() => setIsAddFormOpen(false)} onAddShift={handleAddShift} />
+            <ShiftForm 
+                isOpen={isFormOpen} 
+                onClose={() => { setIsFormOpen(false); setEditingShift(null); }} 
+                onSaveShift={handleSaveShift} 
+                editingShift={editingShift} 
+            />
         </div>
     );
 };

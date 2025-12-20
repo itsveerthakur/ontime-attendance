@@ -1,5 +1,4 @@
 
-
 export interface PayslipItem {
   name: string;
   amount: number;
@@ -24,9 +23,9 @@ export interface PayslipData {
   totalEarnings: number;
   totalDeductions: number;
   netPay: number;
-  workingDays?: number; // Total days in month
+  workingDays?: number;
   paidDays?: number;
-  lopDays?: number; // Loss of pay / Absent
+  lopDays?: number;
 }
 
 export interface Employee {
@@ -115,7 +114,7 @@ export interface Location {
   parentLocation?: string;
   subLocationCount: number;
   employeeCount: number;
-  radius: number; // in meters
+  radius: number;
   status: 'active' | 'inactive';
 }
 
@@ -137,7 +136,7 @@ export interface SubLocation {
   longitude: number;
   deviceInstalled: number;
   employeeCount: number;
-  radius: number; // in meters
+  radius: number;
   isMaster: boolean; 
   status: 'active' | 'inactive';
 }
@@ -154,30 +153,30 @@ export interface EarningsComponent {
   id?: number;
   name: string;
   calculationPercentage: string | number;
-  calculation_percentage?: string | number; // For DB compatibility
+  calculation_percentage?: string | number;
   based_on: string;
   maxCalculatedValue?: number;
-  max_calculated_value?: number; // For DB compatibility
+  max_calculated_value?: number;
 }
 
 export interface DeductionComponent {
   id?: number;
   name: string;
   calculationPercentage: string | number;
-  calculation_percentage?: string | number; // For DB compatibility
+  calculation_percentage?: string | number;
   based_on: string;
   maxCalculatedValue?: number;
-  max_calculated_value?: number; // For DB compatibility
+  max_calculated_value?: number;
 }
 
 export interface EmployerAdditionalComponent {
   id?: number;
   name: string;
   calculationPercentage: string | number;
-  calculation_percentage?: string | number; // For DB compatibility
+  calculation_percentage?: string | number;
   based_on: string;
   maxCalculatedValue?: number;
-  max_calculated_value?: number; // For DB compatibility
+  max_calculated_value?: number;
 }
 
 export interface SalaryStructure {
@@ -190,4 +189,29 @@ export interface SalaryStructure {
   deductions_breakdown: { id: number; name: string; amount: number }[];
   employer_additional_breakdown?: { id: number; name: string; amount: number }[];
   net_salary: number;
+}
+
+// Added to fix AssetManagement.tsx import error
+export interface Asset {
+  id?: number;
+  assetName: string;
+  assetType: 'Electronics' | 'Furniture' | 'Vehicle' | 'Other';
+  serialNumber: string;
+  assignedTo: string;
+  assignedDate: string;
+  status: 'In-Stock' | 'Allocated' | 'Under-Repair' | 'Discarded';
+  created_at?: string;
+}
+
+// Added to fix ExpenseManagement.tsx import error
+export interface ExpenseClaim {
+  id?: number;
+  employeeCode: string;
+  employeeName: string;
+  category: 'Travel' | 'Food' | 'Stationary' | 'Client Meeting' | 'Other';
+  amount: number;
+  claimDate: string;
+  description: string;
+  status: 'Pending' | 'Approved' | 'Rejected' | 'Paid';
+  created_at?: string;
 }

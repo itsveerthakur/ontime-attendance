@@ -1,15 +1,16 @@
 
 import React from 'react';
 import { 
-    DocumentCheckIcon, ComplianceIcon, MoneyIcon, AttendanceIcon, PayrollIcon, CreditCardIcon 
+    DocumentCheckIcon, ComplianceIcon, MoneyIcon, AttendanceIcon, PayrollIcon, CreditCardIcon, ImportIcon
 } from '../../components/icons';
 
 interface PayrollDashboardProps {
     onNavigate: (view: string) => void;
 }
 
-const PayrollCard: React.FC<{ title: string; icon: React.ElementType; onClick: () => void }> = ({ title, icon: Icon, onClick }) => (
-    <div onClick={onClick} className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 flex flex-col items-center justify-center text-center cursor-pointer hover:shadow-lg hover:border-primary hover:-translate-y-1 transition-all duration-300 group">
+const PayrollCard: React.FC<{ title: string; icon: React.ElementType; onClick: () => void; isNew?: boolean }> = ({ title, icon: Icon, onClick, isNew }) => (
+    <div onClick={onClick} className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 flex flex-col items-center justify-center text-center cursor-pointer hover:shadow-lg hover:border-primary hover:-translate-y-1 transition-all duration-300 group relative">
+        {isNew && <span className="absolute top-2 right-2 px-2 py-0.5 bg-green-500 text-white text-[10px] font-bold rounded-full animate-pulse">NEW</span>}
         <div className="bg-primary/10 p-4 rounded-full mb-4 transition-colors group-hover:bg-primary">
             <Icon className="w-8 h-8 text-primary transition-colors group-hover:text-white" />
         </div>
@@ -32,6 +33,7 @@ const PayrollDashboard: React.FC<PayrollDashboardProps> = ({ onNavigate }) => {
                 <PayrollCard title="Salary Prepare" icon={PayrollIcon} onClick={() => onNavigate('Salary Prepare')} />
                 <PayrollCard title="Salary Dashboard" icon={PayrollIcon} onClick={() => onNavigate('Salary Dashboard')} />
                 <PayrollCard title="Staff Advance or Loan" icon={CreditCardIcon} onClick={() => onNavigate('Staff Advance or Loan')} />
+                <PayrollCard title="Instant Excel Payslip" icon={ImportIcon} onClick={() => onNavigate('Excel Payslip Generator')} isNew />
             </div>
         </div>
     );

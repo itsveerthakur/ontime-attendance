@@ -258,3 +258,16 @@ export const RefreshIcon: React.FC<{ className?: string }> = ({ className }) => 
     <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99" />
   </svg>
 );
+
+/* Fixed missing icons InfoIcon and SaveIcon */
+export const InfoIcon: React.FC<{ className?: string }> = ({ className }) => (
+  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={className}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="m11.25 11.25.041-.02a.75.75 0 1 1 .518 1.357L10.5 13.5h3.75m0 0v-4.5m0 4.5h.75a.75.75 0 0 1 0 1.5h-3.75a.75.75 0 0 1 0-1.5h.75m-9-3.75a9 9 0 1 1 18 0 9 9 0 0 1-18 0Z" />
+  </svg>
+);
+
+export const SaveIcon: React.FC<{ className?: string }> = ({ className }) => (
+  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={className}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M17.593 3.322c1.1.128 1.907 1.077 1.907 2.185V21L12 17.25 4.5 21V5.507c0-1.108.806-2.057 1.907-2.185a48.507 48.507 0 0 1 11.186 0Z" />
+  </svg>
+);

@@ -10,6 +10,7 @@ import PrepareAttendance from './payroll/PrepareAttendance';
 import SalaryPrepare from './payroll/SalaryPrepare';
 import FinalizeSalary from './payroll/FinalizeSalary';
 import StaffLoans from './payroll/StaffLoans';
+import ExcelPayslipGenerator from './ExcelPayslipGenerator';
 
 interface PayrollProps {
     initialView?: string;
@@ -38,10 +39,19 @@ const Payroll: React.FC<PayrollProps> = ({ initialView }) => {
               return <PrepareAttendance onBack={() => setActiveView('Dashboard')} />;
           case 'Salary Prepare':
               return <SalaryPrepare onBack={() => setActiveView('Dashboard')} />;
-          case 'Salary Dashboard': // Renamed from 'Finilize & Salary Process'
+          case 'Salary Dashboard':
               return <FinalizeSalary onBack={() => setActiveView('Dashboard')} />;
           case 'Staff Advance or Loan':
               return <StaffLoans onBack={() => setActiveView('Dashboard')} />;
+          case 'Excel Payslip Generator':
+              return (
+                <div>
+                   <button onClick={() => setActiveView('Dashboard')} className="mb-4 text-sm font-bold text-primary hover:underline flex items-center">
+                       <span className="mr-1">←</span> Back to Payroll Dashboard
+                   </button>
+                   <ExcelPayslipGenerator />
+                </div>
+              );
           case 'Dashboard':
           default:
               return <PayrollDashboard onNavigate={setActiveView} />;

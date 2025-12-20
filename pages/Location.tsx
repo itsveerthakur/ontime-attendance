@@ -1,3 +1,4 @@
+
 import React, { useState, useRef, useEffect } from 'react';
 import type { Page } from '../App';
 import type { Location } from '../types';
@@ -84,28 +85,38 @@ const AddEditLocationView: React.FC<AddEditLocationViewProps> = ({ setActivePage
                         lat: position.coords.latitude,
                         lng: position.coords.longitude
                     };
-                    map.setCenter(userLocation);
-                    marker.setPosition(userLocation);
-                    circle.setCenter(userLocation);
+                    if (mapInstance.current) {
+                        mapInstance.current.setCenter(userLocation);
+                    }
+                    if (markerInstance.current) {
+                        markerInstance.current.setPosition(userLocation);
+                    }
+                    if (circleInstance.current) {
+                        circleInstance.current.setCenter(userLocation);
+                    }
                     setFormData(prev => ({
                         ...prev,
                         latitude: userLocation.lat,
                         longitude: userLocation.lng
                     }));
                     
-                    const geocoder = new window.google.maps.Geocoder();
-                    geocoder.geocode({ location: userLocation }, (results: any, status: any) => {
-                        if (status === 'OK' && results[0]) {
-                            setFormData(prev => ({ ...prev, address: results[0].formatted_address }));
-                        } else if (status === "REQUEST_DENIED") {
-                            setMapError("Geocoding Service is not enabled for this API Key. Please enable 'Geocoding API' in Google Cloud Console.");
-                        }
-                    });
+                    try {
+                        const geocoder = new window.google.maps.Geocoder();
+                        geocoder.geocode({ location: userLocation }, (results: any, status: any) => {
+                            if (status === 'OK' && results[0]) {
+                                setFormData(prev => ({ ...prev, address: results[0].formatted_address }));
+                            } else if (status === "REQUEST_DENIED") {
+                                setMapError("Geocoding Service is not authorized for this API key. Please check your Google Cloud project restrictions.");
+                            }
+                        });
+                    } catch (e) {
+                        console.error("Geocoding error:", e);
+                    }
                 },
                 (error) => {
                     console.warn('Geolocation failed:', error);
                     initialCenter = { lat: 28.6139, lng: 77.2090 }; // New Delhi
-                    map.setCenter(initialCenter);
+                    if (mapInstance.current) mapInstance.current.setCenter(initialCenter);
                 }
             );
         } else {
@@ -138,24 +149,25 @@ const AddEditLocationView: React.FC<AddEditLocationViewProps> = ({ setActivePage
         });
         circleInstance.current = circle;
         
-        const geocoder = new window.google.maps.Geocoder();
-
         const updateFormFromLatLng = (latLng: any) => {
             setFormData(prev => ({
                 ...prev,
                 latitude: latLng.lat(),
                 longitude: latLng.lng(),
             }));
-            geocoder.geocode({ location: latLng }, (results: any, status: any) => {
-                if (status === 'OK' && results[0]) {
-                    setFormData(prev => ({ ...prev, address: results[0].formatted_address }));
-                } else {
-                    console.error('Geocoder failed due to: ' + status);
-                    if (status === 'REQUEST_DENIED') {
-                        setMapError("Geocoding service access denied. Please verify your API Key permissions.");
+
+            try {
+                const geocoder = new window.google.maps.Geocoder();
+                geocoder.geocode({ location: latLng }, (results: any, status: any) => {
+                    if (status === 'OK' && results[0]) {
+                        setFormData(prev => ({ ...prev, address: results[0].formatted_address }));
+                    } else if (status === 'REQUEST_DENIED') {
+                        setMapError("Geocoding service access denied. Please verify your API Key permissions and enabled services.");
                     }
-                }
-            });
+                });
+            } catch (e) {
+                console.error("Geocoding failed:", e);
+            }
         };
         
         map.addListener('click', (e: any) => {
@@ -209,7 +221,7 @@ const AddEditLocationView: React.FC<AddEditLocationViewProps> = ({ setActivePage
                         setTimeout(tryInitMap, interval);
                     } else {
                         setMapError(
-                            "This is often an API key configuration issue. Please check the following in your Google Cloud project:\n\n1. Billing is enabled.\n2. The Geocoding API is enabled.\n3. The website URL is an allowed referrer."
+                            "Google Maps API could not be initialized. This might be due to an invalid key or restricted access. Check your console for details."
                         );
                     }
                 }
