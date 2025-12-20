@@ -1,7 +1,7 @@
 
 import React from 'react';
 import { 
-    DocumentCheckIcon, ComplianceIcon, MoneyIcon, AttendanceIcon, PayrollIcon, CreditCardIcon, ImportIcon
+    DocumentCheckIcon, ComplianceIcon, MoneyIcon, AttendanceIcon, PayrollIcon, CreditCardIcon
 } from '../../components/icons';
 
 interface PayrollDashboardProps {
@@ -33,7 +33,6 @@ const PayrollDashboard: React.FC<PayrollDashboardProps> = ({ onNavigate }) => {
                 <PayrollCard title="Salary Prepare" icon={PayrollIcon} onClick={() => onNavigate('Salary Prepare')} />
                 <PayrollCard title="Salary Dashboard" icon={PayrollIcon} onClick={() => onNavigate('Salary Dashboard')} />
                 <PayrollCard title="Staff Advance or Loan" icon={CreditCardIcon} onClick={() => onNavigate('Staff Advance or Loan')} />
-                <PayrollCard title="Instant Excel Payslip" icon={ImportIcon} onClick={() => onNavigate('Excel Payslip Generator')} isNew />
             </div>
         </div>
     );

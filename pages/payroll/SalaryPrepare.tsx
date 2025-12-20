@@ -1,3 +1,4 @@
+
 import React, { useState, useCallback, useEffect } from 'react';
 import { SearchIcon, FilterIcon, XCircleIcon, ChevronRightIcon, LockClosedIcon, LockOpenIcon, LoaderIcon, EyeIcon, ImportIcon } from '../../components/icons';
 import { supabase } from '../../supabaseClient';
@@ -226,9 +227,9 @@ const SalaryPrepare: React.FC<SalaryPrepareProps> = ({ onBack }) => {
     const calculateSalary = (emp: Employee) => {
         const empCode = String(emp.employeeCode);
         const structure = salaryStructures.find(s => s.employee_code === empCode);
-        // Fix: Use any casting for indexing state objects to ensure indexing works reliably across TS environments and bypass "unknown" index errors
-        const attendance = (attendanceData as any)[empCode] || { holiday: 0, weekOff: 0, present: 0, lwp: 0, leave: 0, arrearDays: 0, totalPaidDays: 0 };
-        const adjustment = (payrollAdjustments as any)[empCode] || { arrearAmount: 0, otherDeduction: 0, tds: 0, advance: 0 };
+        // Fix: Explicitly cast to Record<string, any> to ensure dynamic indexing with strings works reliably across TypeScript configurations
+        const attendance = (attendanceData as Record<string, any>)[empCode] || { holiday: 0, weekOff: 0, present: 0, lwp: 0, leave: 0, arrearDays: 0, totalPaidDays: 0 };
+        const adjustment = (payrollAdjustments as Record<string, any>)[empCode] || { arrearAmount: 0, otherDeduction: 0, tds: 0, advance: 0 };
 
         if (!structure) return null;
 
@@ -491,7 +492,7 @@ const SalaryPrepare: React.FC<SalaryPrepareProps> = ({ onBack }) => {
                     const next = { ...prev };
                     data.forEach((row: any) => {
                         const code = String(row['Employee Code'] || row['Code'] || '').trim();
-                        if (code && lockedStatusMap[code] !== 'Locked') {
+                        if (code && (lockedStatusMap as any)[code] !== 'Locked') {
                             const currentAdj = next[code] || { arrearAmount: 0, otherDeduction: 0, tds: 0, advance: 0 };
                             
                             next[code] = {
@@ -675,14 +676,14 @@ const SalaryPrepare: React.FC<SalaryPrepareProps> = ({ onBack }) => {
                             </thead>
                             <tbody className="divide-y divide-slate-100">
                                 {filteredEmployees.map((emp: Employee) => {
-                                    // Fix: Using any casting to robustly index state objects and avoid "unknown" index errors in strict environments
-                                    const empKey: string = String(emp.employeeCode);
-                                    const attendance = (attendanceData as any)[empKey] || { totalPaidDays: 0, arrearDays: 0 };
-                                    const adj = (payrollAdjustments as any)[empKey] || { arrearAmount: 0, otherDeduction: 0, tds: 0, advance: 0 };
+                                    // Fix: Cast mappings Record to explicitly allow dynamic indexing with employee code strings to prevent "Type 'unknown' cannot be used as an index type" errors
+                                    const code: string = String(emp.employeeCode);
+                                    const attendance = (attendanceData as Record<string, any>)[code] || { totalPaidDays: 0, arrearDays: 0 };
+                                    const adj = (payrollAdjustments as Record<string, any>)[code] || { arrearAmount: 0, otherDeduction: 0, tds: 0, advance: 0 };
                                     const calculated: any = calculateSalary(emp);
-                                    const isLocked = (lockedStatusMap as any)[empKey] === 'Locked';
+                                    const isLocked = (lockedStatusMap as Record<string, any>)[code] === 'Locked';
                                     
-                                    const originalOutstanding = (loanBalances as any)[empKey] || 0;
+                                    const originalOutstanding = (loanBalances as Record<string, any>)[code] || 0;
                                     const displayedBalance = Math.max(0, originalOutstanding - (adj.advance || 0));
 
                                     return (

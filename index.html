@@ -8,7 +8,7 @@
     <title>On Time attendance</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- SheetJS (xlsx) library for parsing Excel files -->
-    <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script>
       tailwind.config = {
         theme: {
@@ -139,9 +139,8 @@
         100% { opacity: 1; }
       }
     </style>
-    <!-- IMPORTANT: The previous Google Maps API key appeared to be invalid and was likely causing a critical loading error. -->
-    <!-- Please replace YOUR_GOOGLE_MAPS_API_KEY_HERE with a valid key from your Google Cloud project to enable map features. -->
-    <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyAT38-uF0rGjMKbc8mLP3c6ZPRWQa93lRM&libraries=places"></script>
+    <!-- Maps script added with async/defer to prevent render blocking -->
+    <script async defer src="https://maps.googleapis.com/maps/api/js?key=AIzaSyAT38-uF0rGjMKbc8mLP3c6ZPRWQa93lRM&libraries=places"></script>
   <script type="importmap">
 {
   "imports": {
@@ -158,6 +157,7 @@
 </head>
   <body class="bg-slate-50">
     <div id="root"></div>
-    <script type="module" src="/index.tsx"></script>
-  </body>
+    <script type="module" src="index.tsx"></script>
+  <script type="module" src="/index.tsx"></script>
+</body>
 </html>

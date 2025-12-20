@@ -6,28 +6,11 @@ import {
     ChevronRightIcon, ClockIcon, SaveIcon, LoaderIcon, 
     CheckCircleIcon, XCircleIcon, InfoIcon, RefreshIcon, PlusIcon, TrashIcon 
 } from '../components/icons';
+/* Import shared types from types.ts */
+import type { AttendanceRules, CompoundingRule } from '../types';
 
 interface AttendanceConditionsProps {
     setActivePage: (page: Page) => void;
-}
-
-interface CompoundingRule {
-    in_status: string;
-    out_status: string;
-    result_status: string;
-}
-
-interface AttendanceRules {
-    id?: number;
-    in_grace_period: number;
-    out_grace_period: number;
-    late_threshold: number;
-    in_short_leave_threshold: number;
-    out_short_leave_threshold: number;
-    in_half_day_threshold: number;
-    out_half_day_threshold: number;
-    compounding_rules: CompoundingRule[];
-    updated_at?: string;
 }
 
 const AttendanceConditions: React.FC<AttendanceConditionsProps> = ({ setActivePage }) => {

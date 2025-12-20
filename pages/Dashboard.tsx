@@ -278,7 +278,7 @@ const Dashboard: React.FC<DashboardProps> = ({ setActivePage }) => {
 
     // Navigate specifically to Salary Dashboard with params if possible (for now just page)
     const handleGoToSalaryDashboard = () => {
-        // Store selected month in local storage to persist context if needed, or just navigate
+        // Store selected month in local storage to prevent loss of context
         localStorage.setItem('payroll_month', salaryCardMonth);
         localStorage.setItem('payroll_year', String(salaryCardYear));
         setActivePage('Salary Dashboard'); 
@@ -534,7 +534,6 @@ const Dashboard: React.FC<DashboardProps> = ({ setActivePage }) => {
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100">
-                                {/* Fix: Explicitly type the arguments of map to resolve unknown property access errors */}
                                 {Object.entries(stats.departments).map(([dept, counts]: [string, any]) => (
                                     <tr key={dept} className="hover:bg-slate-50">
                                         <td className="px-6 py-3 font-medium text-slate-900">{dept}</td>
