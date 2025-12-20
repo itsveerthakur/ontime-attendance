@@ -31,6 +31,7 @@ const AttendanceManagement: React.FC<AttendanceManagementProps> = ({ setActivePa
     const [employees, setEmployees] = useState<Employee[]>([]);
     const [shifts, setShifts] = useState<Shift[]>([]);
     const [rules, setRules] = useState<AttendanceRules>({
+        id: 1,
         in_grace_period: 13, out_grace_period: 5, late_threshold: 13,
         in_short_leave_threshold: 30, out_short_leave_threshold: 120,
         in_half_day_threshold: 120, out_half_day_threshold: 240, compounding_rules: []
@@ -77,6 +78,34 @@ const AttendanceManagement: React.FC<AttendanceManagementProps> = ({ setActivePa
 
     useEffect(() => { fetchBaseData(); }, [fetchBaseData]);
 
+    const handleDownloadDetailedTemplate = () => {
+        const monthIdx = MONTHS.indexOf(selectedMonth);
+        const daysInMonth = new Date(selectedYear, monthIdx + 1, 0).getDate();
+        
+        // Define Base Headers
+        const headers = ['Employee', 'Employee Name'];
+        
+        // Dynamic Date Headers
+        for (let d = 1; d <= daysInMonth; d++) {
+            headers.push(`IN${d}`, `OUT${d}`);
+        }
+
+        // Sample Row
+        const sampleRow: any = {
+            'Employee': 'EMP001',
+            'Employee Name': 'John Doe'
+        };
+        for (let d = 1; d <= daysInMonth; d++) {
+            sampleRow[`IN${d}`] = '09:30';
+            sampleRow[`OUT${d}`] = '18:30';
+        }
+
+        const ws = XLSX.utils.json_to_sheet([sampleRow], { header: headers });
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, "Detailed Timings");
+        XLSX.writeFile(wb, `Detailed_Timings_Template_${selectedMonth}_${selectedYear}.xlsx`);
+    };
+
     const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file) return;
@@ -87,21 +116,82 @@ const AttendanceManagement: React.FC<AttendanceManagementProps> = ({ setActivePa
                 const wb = XLSX.read(bstr, { type: 'binary' });
                 const ws = wb.Sheets[wb.SheetNames[0]];
                 const data = XLSX.utils.sheet_to_json(ws);
-                const logs = data.map((row: any) => ({
-                    employee_code: String(row['Employee Code'] || row['Code'] || '').trim(),
-                    punch_time: new Date(`${row['Date'] || selectedDate} ${row['Time']}`).toISOString(),
-                    punch_type: (row['Type'] || 'IN').toUpperCase(),
-                    location_name: 'Manual Import',
-                    is_verified: true
-                })).filter(l => l.employee_code && !isNaN(new Date(l.punch_time).getTime()));
+                
+                let logs: any[] = [];
+
+                if (activeView === 'MonthlyDetailed') {
+                    // Logic for "Detailed Timings" horizontal format
+                    const monthIdx = MONTHS.indexOf(selectedMonth);
+                    const daysInMonth = new Date(selectedYear, monthIdx + 1, 0).getDate();
+
+                    data.forEach((row: any) => {
+                        const code = String(row['Employee'] || row['Employee Code'] || row['Code'] || '').trim();
+                        if (!code) return;
+
+                        for (let d = 1; d <= daysInMonth; d++) {
+                            const inTime = row[`IN${d}`];
+                            const outTime = row[`OUT${d}`];
+
+                            // Helper to parse HH:mm or Excel serial time
+                            const parseTime = (val: any) => {
+                                if (!val || val === 'A' || val === 'WO' || val === 'W/O' || val === '-') return null;
+                                if (typeof val === 'number') {
+                                    const totalSeconds = Math.round(val * 24 * 3600);
+                                    const hours = Math.floor(totalSeconds / 3600);
+                                    const minutes = Math.floor((totalSeconds % 3600) / 60);
+                                    return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+                                }
+                                return String(val).trim();
+                            };
+
+                            const cleanIn = parseTime(inTime);
+                            const cleanOut = parseTime(outTime);
+
+                            if (cleanIn) {
+                                logs.push({
+                                    employee_code: code,
+                                    punch_time: new Date(selectedYear, monthIdx, d, parseInt(cleanIn.split(':')[0]), parseInt(cleanIn.split(':')[1])).toISOString(),
+                                    punch_type: 'IN',
+                                    location_name: 'Detailed Import',
+                                    is_verified: true
+                                });
+                            }
+                            if (cleanOut) {
+                                logs.push({
+                                    employee_code: code,
+                                    punch_time: new Date(selectedYear, monthIdx, d, parseInt(cleanOut.split(':')[0]), parseInt(cleanOut.split(':')[1])).toISOString(),
+                                    punch_type: 'OUT',
+                                    location_name: 'Detailed Import',
+                                    is_verified: true
+                                });
+                            }
+                        }
+                    });
+                } else {
+                    // Default logic for list-based format
+                    logs = data.map((row: any) => ({
+                        employee_code: String(row['Employee Code'] || row['Code'] || '').trim(),
+                        punch_time: new Date(`${row['Date'] || selectedDate} ${row['Time']}`).toISOString(),
+                        punch_type: (row['Type'] || 'IN').toUpperCase(),
+                        location_name: 'Manual Import',
+                        is_verified: true
+                    })).filter(l => l.employee_code && !isNaN(new Date(l.punch_time).getTime()));
+                }
                 
                 if (logs.length > 0) {
+                    setIsLoading(true);
                     const { error } = await supabase.from('attendance_logs').insert(logs);
                     if (error) throw error;
-                    alert(`Imported ${logs.length} records.`);
+                    alert(`Imported ${logs.length} records successfully.`);
                     window.location.reload();
+                } else {
+                    alert("No valid punch data found in the file.");
                 }
-            } catch (err: any) { alert("Import failed: " + err.message); }
+            } catch (err: any) { 
+                alert("Import failed: " + err.message); 
+            } finally {
+                setIsLoading(false);
+            }
         };
         reader.readAsBinaryString(file);
     };
@@ -137,7 +227,6 @@ const AttendanceManagement: React.FC<AttendanceManagementProps> = ({ setActivePa
     }
 
     const filteredEmployees = employees.filter(e => {
-        // 1. Existing Filter Logic
         const matchesSearch = searchTerm === '' || `${e.firstName} ${e.lastName} ${e.employeeCode}`.toLowerCase().includes(searchTerm.toLowerCase());
         const matchesDept = !deptFilter || e.department === deptFilter;
         const matchesShift = !shiftFilter || e.shiftId === Number(shiftFilter);
@@ -146,7 +235,6 @@ const AttendanceManagement: React.FC<AttendanceManagementProps> = ({ setActivePa
         
         if (!(matchesSearch && matchesDept && matchesShift && matchesLoc && matchesType)) return false;
 
-        // 2. Joining & Resignation Validation Logic
         let periodStart: Date;
         let periodEnd: Date;
 
@@ -156,15 +244,13 @@ const AttendanceManagement: React.FC<AttendanceManagementProps> = ({ setActivePa
         } else {
             const monthIdx = MONTHS.indexOf(selectedMonth);
             periodStart = new Date(selectedYear, monthIdx, 1);
-            periodEnd = new Date(selectedYear, monthIdx + 1, 0, 23, 59, 59); // Last day of month
+            periodEnd = new Date(selectedYear, monthIdx + 1, 0, 23, 59, 59); 
         }
 
         const doj = new Date(e.dateOfJoining + 'T00:00:00');
         const dol = e.dateOfLeaving ? new Date(e.dateOfLeaving + 'T00:00:00') : null;
 
-        // Joined on or before the end of the current viewing period
         const isJoined = doj <= periodEnd;
-        // Either hasn't left, or left on/after the start of the current period
         const isNotYetLeft = !dol || dol >= periodStart;
 
         return isJoined && isNotYetLeft;
@@ -212,11 +298,18 @@ const AttendanceManagement: React.FC<AttendanceManagementProps> = ({ setActivePa
                     
                     <button onClick={() => setShowFilters(!showFilters)} className={`p-3 rounded-xl border-2 transition-all ${showFilters ? 'bg-primary text-white border-primary' : 'bg-white text-slate-400 border-slate-100 hover:bg-slate-50'}`}><FilterIcon className="w-5 h-5" /></button>
 
-                    {activeView === 'DailyRegister' && (
-                        <label className="flex items-center gap-2 bg-[#6366f1] text-white px-7 py-3 rounded-xl text-xs font-black hover:bg-indigo-700 transition-all cursor-pointer shadow-lg shadow-indigo-100 uppercase tracking-widest">
-                            <ImportIcon className="w-4 h-4" /> <span>IMPORT</span>
-                            <input type="file" accept=".xlsx,.xls" className="hidden" onChange={handleImport} />
-                        </label>
+                    {(activeView === 'DailyRegister' || activeView === 'MonthlyDetailed') && (
+                        <div className="flex items-center gap-2">
+                             {activeView === 'MonthlyDetailed' && (
+                                <button onClick={handleDownloadDetailedTemplate} className="text-xs font-black text-primary hover:underline px-2 tracking-widest uppercase">
+                                    Template
+                                </button>
+                            )}
+                            <label className="flex items-center gap-2 bg-[#6366f1] text-white px-7 py-3 rounded-xl text-xs font-black hover:bg-indigo-700 transition-all cursor-pointer shadow-lg shadow-indigo-100 uppercase tracking-widest">
+                                <ImportIcon className="w-4 h-4" /> <span>IMPORT</span>
+                                <input type="file" accept=".xlsx,.xls" className="hidden" onChange={handleImport} />
+                            </label>
+                        </div>
                     )}
                     <button onClick={handleExport} className="flex items-center gap-2 bg-black text-white px-7 py-3 rounded-xl text-xs font-black hover:bg-slate-800 transition-all shadow-lg uppercase tracking-widest">
                         EXPORT
