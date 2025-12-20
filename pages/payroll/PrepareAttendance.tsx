@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useCallback } from 'react';
 import { ImportIcon, CheckCircleIcon, ChevronRightIcon, SearchIcon, FilterIcon, LockClosedIcon, LockOpenIcon, LoaderIcon } from '../../components/icons';
 import { supabase } from '../../supabaseClient';
@@ -49,7 +50,6 @@ const PrepareAttendance: React.FC<PrepareAttendanceProps> = ({ onBack }) => {
              
              setEmployees(empRes.data as Employee[] || []);
 
-             /* Fixed incorrect property names and redundant mapping in fetchData (Fixes Line 59 error) */
              const normalizedData: Record<string, AttendanceRecord> = {};
              if (attRes.data) {
                 attRes.data.forEach((r: any) => {
@@ -95,7 +95,6 @@ const PrepareAttendance: React.FC<PrepareAttendanceProps> = ({ onBack }) => {
         setAttendanceData(prev => {
             const curr = prev[code] || { holiday: 0, weekOff: 0, present: 0, lwp: 0, leave: 0, arrearDays: 0, totalPaidDays: 0, lock_status: 'Open' };
             
-            // If locked, do not allow changes
             if (curr.lock_status === 'Locked') return prev;
             if (salaryLockStatusMap[code] === 'Locked') return prev;
 
@@ -124,12 +123,8 @@ const PrepareAttendance: React.FC<PrepareAttendanceProps> = ({ onBack }) => {
         });
     };
 
-    /**
-     * Automatic Compensatory Off (CO) logic
-     */
     const processCompOffCredits = async (codes: string[]) => {
         try {
-            // 1. Fetch CO rules
             const { data: coRules } = await supabase.schema('leaves')
                 .from('leave_rules')
                 .select('*')
@@ -138,7 +133,6 @@ const PrepareAttendance: React.FC<PrepareAttendanceProps> = ({ onBack }) => {
             
             if (!coRules || coRules.length === 0) return;
 
-            // 2. Fetch Weekly Off Settings
             const { data: woSettings } = await supabase.schema('payroll')
                 .from('weekly_off_settings')
                 .select('*')
@@ -146,7 +140,6 @@ const PrepareAttendance: React.FC<PrepareAttendanceProps> = ({ onBack }) => {
             
             if (!woSettings) return;
 
-            // 3. Fetch detailed status records
             const monthIndex = MONTHS.indexOf(selectedMonth);
             const startDate = new Date(selectedYear, monthIndex, 1).toISOString();
             const endDate = new Date(selectedYear, monthIndex + 1, 0, 23, 59, 59).toISOString();
@@ -184,14 +177,12 @@ const PrepareAttendance: React.FC<PrepareAttendanceProps> = ({ onBack }) => {
                     if (isWeeklyOff && didWork) {
                         let isSandwiched = false;
                         if (setting.sandwich_rule) {
-                            // Find nearest work days
                             const findAbsenceOnWorkDay = (day: number, direction: number) => {
                                 let check = day + direction;
                                 while (check >= 1 && check <= daysInMonthCount) {
                                     const cDate = new Date(selectedYear, monthIndex, check);
                                     const cDayName = cDate.toLocaleDateString('en-US', { weekday: 'long' });
                                     if (!setting.days.includes(cDayName)) {
-                                        // It's a work day, was employee absent?
                                         return !daysWorked.has(check);
                                     }
                                     check += direction;
@@ -225,7 +216,6 @@ const PrepareAttendance: React.FC<PrepareAttendanceProps> = ({ onBack }) => {
                 }
             }
 
-            // Upsert Ledger
             for (const [code, leaveMap] of Object.entries(creditsToApply)) {
                 for (const [leaveCode, qty] of Object.entries(leaveMap)) {
                     const { data: existing } = await supabase.schema('leaves')
@@ -359,13 +349,32 @@ const PrepareAttendance: React.FC<PrepareAttendanceProps> = ({ onBack }) => {
         await saveAttendance(Array.from(selectedEmployeeCodes), lock ? 'Locked' : 'Open');
     };
 
-    const filteredEmployees = employees.filter(e => 
-        e.firstName.toLowerCase().includes(searchTerm.toLowerCase()) || 
-        e.lastName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        e.employeeCode.toLowerCase().includes(searchTerm.toLowerCase())
-    );
+    // Advanced filtering based on selected month/year and employee lifecycle
+    const filteredEmployees = employees.filter(e => {
+        // 1. Search Filter
+        const matchesSearch = 
+            e.firstName.toLowerCase().includes(searchTerm.toLowerCase()) || 
+            e.lastName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            e.employeeCode.toLowerCase().includes(searchTerm.toLowerCase());
+        
+        if (!matchesSearch) return false;
 
-    /* Fixed missing toggleSelectAll function on line 412 */
+        // 2. Date Lifecycle Filter
+        const monthIdx = MONTHS.indexOf(selectedMonth);
+        const periodStart = new Date(selectedYear, monthIdx, 1);
+        const periodEnd = new Date(selectedYear, monthIdx + 1, 0); // Last day of selected month
+
+        const doj = new Date(e.dateOfJoining);
+        const dol = e.dateOfLeaving ? new Date(e.dateOfLeaving) : null;
+
+        // Condition A: Joined on or before the end of the selected month
+        const isJoined = doj <= periodEnd;
+        // Condition B: Not resigned, or resigned on or after the first day of the selected month
+        const isNotYetLeft = !dol || dol >= periodStart;
+
+        return isJoined && isNotYetLeft;
+    });
+
     const toggleSelectAll = (checked: boolean) => {
         if (checked) {
             setSelectedEmployeeCodes(new Set(filteredEmployees.map(e => e.employeeCode)));
@@ -374,7 +383,6 @@ const PrepareAttendance: React.FC<PrepareAttendanceProps> = ({ onBack }) => {
         }
     };
 
-    /* Fixed missing toggleSelectEmployee function on line 422 */
     const toggleSelectEmployee = (code: string) => {
         const next = new Set(selectedEmployeeCodes);
         if (next.has(code)) next.delete(code);
@@ -449,7 +457,7 @@ const PrepareAttendance: React.FC<PrepareAttendanceProps> = ({ onBack }) => {
                                         </tr>
                                     );
                                 })}
-                                {filteredEmployees.length === 0 && (<tr><td colSpan={13} className="px-6 py-12 text-center text-slate-500">No Employees Found</td></tr>)}
+                                {filteredEmployees.length === 0 && (<tr><td colSpan={13} className="px-6 py-12 text-center text-slate-500">No Eligible Employees Found for the Selected Period</td></tr>)}
                             </tbody>
                         </table>
                     </div>

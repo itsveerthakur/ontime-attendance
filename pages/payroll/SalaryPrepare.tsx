@@ -58,7 +58,6 @@ const SalaryPrepare: React.FC<SalaryPrepareProps> = ({ onBack }) => {
         setIsLoading(true);
         setSelectedEmployeeCodes(new Set()); // Reset selection on fetch
         try {
-            // 1. Fetch Employees and Structures
             const [empRes, structRes] = await Promise.all([
                 supabase.from('employees').select('*').order('employeeCode'),
                 supabase.schema('payroll').from('employee_salary_structures').select('*')
@@ -68,7 +67,6 @@ const SalaryPrepare: React.FC<SalaryPrepareProps> = ({ onBack }) => {
             setEmployees(empRes.data as Employee[] || []);
             setSalaryStructures(structRes.data as SalaryStructure[] || []);
 
-            // 2. Fetch Attendance for Month
             const { data: attData, error: attError } = await supabase
                 .schema('payroll').from('attendance_entries')
                 .select('*')
@@ -93,7 +91,6 @@ const SalaryPrepare: React.FC<SalaryPrepareProps> = ({ onBack }) => {
             });
             setAttendanceData(attMap);
 
-            // 3. Fetch Existing Locked Salaries (if any) for CURRENT month
             const { data: salaryData, error: salaryError } = await supabase
                 .schema('salarySheet')
                 .from('monthly_salary_table')
@@ -120,8 +117,6 @@ const SalaryPrepare: React.FC<SalaryPrepareProps> = ({ onBack }) => {
             }
             setLockedStatusMap(lockMap);
             
-            // 4. Fetch Loans & Calculate Repayments
-            // 4a. Active Loans
             const { data: loansData } = await supabase.schema('payroll').from('staff_loans').select('*')
                 .or('status.eq.Approved,status.eq.Active');
             
@@ -139,7 +134,6 @@ const SalaryPrepare: React.FC<SalaryPrepareProps> = ({ onBack }) => {
             }
             setActiveLoans(activeLoansMap);
 
-            // 4b. Calculate Repaid Amount from ALL locked salary records
             const { data: historyData } = await supabase
                 .schema('salarySheet')
                 .from('monthly_salary_table')
@@ -164,7 +158,6 @@ const SalaryPrepare: React.FC<SalaryPrepareProps> = ({ onBack }) => {
                 });
             }
 
-            // 5. Initialize Adjustments with Auto-Deduction Logic
             const newAdjMap = { ...adjMap };
             const currentMonthDate = new Date(selectedYear, MONTHS.indexOf(selectedMonth), 1);
             const balanceMap: Record<string, number> = {};
@@ -221,14 +214,10 @@ const SalaryPrepare: React.FC<SalaryPrepareProps> = ({ onBack }) => {
         }));
     };
 
-    /**
-     * Helper to calculate final payout values based on attendance and adjustments
-     */
     const calculateSalary = (emp: Employee) => {
         const empCode = String(emp.employeeCode);
         const structure = salaryStructures.find(s => s.employee_code === empCode);
-        // Fix: Explicitly cast to Record<string, any> to ensure dynamic indexing with strings works reliably across TypeScript configurations
-        const attendance = (attendanceData as Record<string, any>)[empCode] || { holiday: 0, weekOff: 0, present: 0, lwp: 0, leave: 0, arrearDays: 0, totalPaidDays: 0 };
+        const attendance = (attendanceData as Record<string, any>)[empCode] || { totalPaidDays: 0, arrearDays: 0 };
         const adjustment = (payrollAdjustments as Record<string, any>)[empCode] || { arrearAmount: 0, otherDeduction: 0, tds: 0, advance: 0 };
 
         if (!structure) return null;
@@ -444,11 +433,33 @@ const SalaryPrepare: React.FC<SalaryPrepareProps> = ({ onBack }) => {
         }
     };
 
-    const filteredEmployees = employees.filter(e => 
-        e.firstName.toLowerCase().includes(searchTerm.toLowerCase()) || 
-        e.lastName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        e.employeeCode.toLowerCase().includes(searchTerm.toLowerCase())
-    );
+    // Implemented Join/Exit date lifecycle filtering
+    const filteredEmployees = employees.filter(e => {
+        // 1. Basic Search
+        const matchesSearch = 
+            e.firstName.toLowerCase().includes(searchTerm.toLowerCase()) || 
+            e.lastName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            e.employeeCode.toLowerCase().includes(searchTerm.toLowerCase());
+        
+        if (!matchesSearch) return false;
+
+        // 2. Date Context Filtering
+        const monthIdx = MONTHS.indexOf(selectedMonth);
+        const periodStart = new Date(selectedYear, monthIdx, 1);
+        const periodEnd = new Date(selectedYear, monthIdx + 1, 0); // Last day of month
+
+        const doj = new Date(e.dateOfJoining);
+        const dol = e.dateOfLeaving ? new Date(e.dateOfLeaving) : null;
+
+        // Condition A: Employee joined on or before the end of the processing month
+        const isJoined = doj <= periodEnd;
+        
+        // Condition B: Employee hasn't resigned, or resigned on/after the start of the processing month
+        // (Allows processing for the month in which they actually leave)
+        const isNotYetLeft = !dol || dol >= periodStart;
+
+        return isJoined && isNotYetLeft;
+    });
 
     const toggleSelectAll = (checked: boolean) => {
         if (checked) {
@@ -676,7 +687,6 @@ const SalaryPrepare: React.FC<SalaryPrepareProps> = ({ onBack }) => {
                             </thead>
                             <tbody className="divide-y divide-slate-100">
                                 {filteredEmployees.map((emp: Employee) => {
-                                    // Fix: Cast mappings Record to explicitly allow dynamic indexing with employee code strings to prevent "Type 'unknown' cannot be used as an index type" errors
                                     const code: string = String(emp.employeeCode);
                                     const attendance = (attendanceData as Record<string, any>)[code] || { totalPaidDays: 0, arrearDays: 0 };
                                     const adj = (payrollAdjustments as Record<string, any>)[code] || { arrearAmount: 0, otherDeduction: 0, tds: 0, advance: 0 };
@@ -782,7 +792,7 @@ const SalaryPrepare: React.FC<SalaryPrepareProps> = ({ onBack }) => {
                                 {filteredEmployees.length === 0 && (
                                      <tr>
                                         <td colSpan={13} className="px-6 py-12 text-center text-slate-500">
-                                            No employees found based on filters.
+                                            No eligible employees found for the selected processing window.
                                         </td>
                                     </tr>
                                 )}
