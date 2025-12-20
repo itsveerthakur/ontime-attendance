@@ -137,12 +137,37 @@ const AttendanceManagement: React.FC<AttendanceManagementProps> = ({ setActivePa
     }
 
     const filteredEmployees = employees.filter(e => {
+        // 1. Existing Filter Logic
         const matchesSearch = searchTerm === '' || `${e.firstName} ${e.lastName} ${e.employeeCode}`.toLowerCase().includes(searchTerm.toLowerCase());
         const matchesDept = !deptFilter || e.department === deptFilter;
         const matchesShift = !shiftFilter || e.shiftId === Number(shiftFilter);
         const matchesLoc = !locFilter || e.location === locFilter;
         const matchesType = !userTypeFilter || e.userType === userTypeFilter;
-        return matchesSearch && matchesDept && matchesShift && matchesLoc && matchesType;
+        
+        if (!(matchesSearch && matchesDept && matchesShift && matchesLoc && matchesType)) return false;
+
+        // 2. Joining & Resignation Validation Logic
+        let periodStart: Date;
+        let periodEnd: Date;
+
+        if (activeView === 'DailyRegister') {
+            periodStart = new Date(selectedDate + 'T00:00:00');
+            periodEnd = new Date(selectedDate + 'T23:59:59');
+        } else {
+            const monthIdx = MONTHS.indexOf(selectedMonth);
+            periodStart = new Date(selectedYear, monthIdx, 1);
+            periodEnd = new Date(selectedYear, monthIdx + 1, 0, 23, 59, 59); // Last day of month
+        }
+
+        const doj = new Date(e.dateOfJoining + 'T00:00:00');
+        const dol = e.dateOfLeaving ? new Date(e.dateOfLeaving + 'T00:00:00') : null;
+
+        // Joined on or before the end of the current viewing period
+        const isJoined = doj <= periodEnd;
+        // Either hasn't left, or left on/after the start of the current period
+        const isNotYetLeft = !dol || dol >= periodStart;
+
+        return isJoined && isNotYetLeft;
     });
 
     return (
@@ -256,7 +281,7 @@ const AttendanceCard: React.FC<{ title: string; icon: React.ReactNode; onClick: 
                 {icon}
              </div>
         </div>
-        <h3 className="font-black text-slate-700 text-xs group-hover:text-primary transition-colors tracking-widest uppercase leading-tight">{title}</h3>
+        <h3 className="font-black text-slate-700 text-sm group-hover:text-primary transition-colors tracking-widest uppercase leading-tight">{title}</h3>
     </div>
 );
 
